@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(podman secret:*)",
+      "Bash(podman play:*)",
+      "Bash(curl -fsSL https://claude.ai/install.sh)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(chmod:*)",
+      "Bash(make help:*)"
+    ]
+  }
+}

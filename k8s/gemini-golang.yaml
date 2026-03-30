@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gemini-golang
+  labels:
+    app: gemini-golang
+    tool: gemini-cli
+    lang: golang
+spec:
+  IMAGE_PULL_SECRET_BLOCK
+  containers:
+    - name: gemini-golang
+      image: REGISTRY/gemini-cli-golang:IMAGE_TAG
+      env:
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gemini-secret
+              key: GEMINI_API_KEY
+      stdin: true
+      tty: true
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "1000m"
+  restartPolicy: Never
