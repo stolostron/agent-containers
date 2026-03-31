@@ -23,40 +23,52 @@ build-claude-golang:  ## Build Claude Code + Golang + Git image
 build-claude-python:  ## Build Claude Code + Python3 + Git image
 	@bash scripts/build.sh claude-code-python containerfiles/Containerfile.claude python
 
+.PHONY: build-claude
+build-claude: build-claude-golang build-claude-python  ## Build both Claude Code images (golang + python)
+
+.PHONY: build-gemini
+build-gemini: build-gemini-golang build-gemini-python  ## Build both Gemini CLI images (golang + python)
+
 .PHONY: build-all
-build-all: build-gemini-golang build-gemini-python build-claude-golang build-claude-python  ## Build all four images
+build-all: build-claude build-gemini  ## Build all four images
 
 # --------------------------------------------------------------------------
 # Push  (reads registry/image_tag from .push-defaults — no prompts)
 # --------------------------------------------------------------------------
 .PHONY: push-gemini-golang
-push-gemini-golang: build-gemini-golang  ## Build and push gemini-cli-golang
+push-gemini-golang:  ## Push gemini-cli-golang (uses .push-defaults)
 	@bash scripts/push.sh gemini-cli-golang
 
 .PHONY: push-gemini-python
-push-gemini-python: build-gemini-python  ## Build and push gemini-cli-python
+push-gemini-python:  ## Push gemini-cli-python (uses .push-defaults)
 	@bash scripts/push.sh gemini-cli-python
 
 .PHONY: push-claude-golang
-push-claude-golang: build-claude-golang  ## Build and push claude-code-golang
+push-claude-golang:  ## Push claude-code-golang (uses .push-defaults)
 	@bash scripts/push.sh claude-code-golang
 
 .PHONY: push-claude-python
-push-claude-python: build-claude-python  ## Build and push claude-code-python
+push-claude-python:  ## Push claude-code-python (uses .push-defaults)
 	@bash scripts/push.sh claude-code-python
 
+.PHONY: push-claude
+push-claude: push-claude-golang push-claude-python  ## Build and push both Claude Code images
+
+.PHONY: push-gemini
+push-gemini: push-gemini-golang push-gemini-python  ## Build and push both Gemini CLI images
+
 .PHONY: podman-push
-podman-push: push-gemini-golang push-gemini-python push-claude-golang push-claude-python  ## Build and push all four images (also tags :latest)
+podman-push: push-claude push-gemini  ## Build and push all four images (also tags :latest)
 
 # --------------------------------------------------------------------------
 # Secrets  (generates gitignored k8s/secrets/*.yaml — no kubectl required)
 # --------------------------------------------------------------------------
 .PHONY: create-gemini-secret
-create-gemini-secret:  ## Generate Gemini secret YAML.  Usage: make create-gemini-secret GEMINI_API_KEY=xxx
+create-gemini-secret:  ## Generate Gemini secret YAML.  Requires: GEMINI_API_KEY=<key>
 	@bash scripts/create-secrets.sh gemini "$(GEMINI_API_KEY)"
 
 .PHONY: create-claude-vertex-secret
-create-claude-vertex-secret:  ## Generate Claude Vertex secret YAML.  Usage: make create-claude-vertex-secret PROJECT_ID=xxx REGION=us-east5 [CREDS_FILE=~/.config/gcloud/application_default_credentials.json]
+create-claude-vertex-secret:  ## Generate Claude Vertex secret YAML.  Requires: PROJECT_ID=<id> REGION=<region>  Optional: CREDS_FILE=<path> (default: ~/.config/gcloud/application_default_credentials.json)
 	@bash scripts/create-secrets.sh claude "$(PROJECT_ID)" "$(REGION)" "$(CREDS_FILE)"
 
 # --------------------------------------------------------------------------

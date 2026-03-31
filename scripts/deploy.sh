@@ -17,10 +17,11 @@ fi
 # ── Read saved values ────────────────────────────────────────────────────────
 _get() { grep "^${1}=" "$DEFAULTS_FILE" | cut -d= -f2- || true; }
 
-REGISTRY=$(        _get REGISTRY)
-IMAGE_TAG=$(       _get IMAGE_TAG);  IMAGE_TAG="${IMAGE_TAG:-latest}"
-SAVED_PULL_SECRET=$(_get IMAGE_PULL_SECRET)
-SAVED_NAMESPACE=$(  _get NAMESPACE)
+REGISTRY=$(           _get REGISTRY)
+IMAGE_TAG=$(          _get IMAGE_TAG);  IMAGE_TAG="${IMAGE_TAG:-latest}"
+SAVED_NAMESPACE=$(    _get NAMESPACE)
+SAVED_PULL_SECRET=$(  _get IMAGE_PULL_SECRET)
+SAVED_PULL_SECRET_FILE=$(_get IMAGE_PULL_SECRET_FILE)
 
 if [[ -z "$REGISTRY" ]]; then
     echo "Error: REGISTRY not set in .push-defaults. Run a build target first." >&2
@@ -32,35 +33,50 @@ echo "=== Deploy: $(basename "$YAML_FILE") ==="
 echo "    Registry : ${REGISTRY}"
 echo "    IMAGE_TAG: ${IMAGE_TAG}"
 
-# ── Prompt: imagePullSecret ──────────────────────────────────────────────────
-if [[ -n "$SAVED_PULL_SECRET" ]]; then
-    read -rp "imagePullSecret [${SAVED_PULL_SECRET}] (Enter=keep, '-'=clear): " INPUT
-    if [[ "$INPUT" == "-" ]]; then
-        IMAGE_PULL_SECRET=""
-    else
-        IMAGE_PULL_SECRET="${INPUT:-$SAVED_PULL_SECRET}"
-    fi
-else
-    read -rp "imagePullSecret (Enter to skip): " IMAGE_PULL_SECRET
-fi
-
 # ── Prompt: namespace ────────────────────────────────────────────────────────
 if [[ -n "$SAVED_NAMESPACE" ]]; then
-    read -rp "Namespace        [${SAVED_NAMESPACE}] (Enter=keep, '-'=clear): " INPUT
+    read -rp "Namespace             [${SAVED_NAMESPACE}] (Enter=keep, '-'=clear): " INPUT
     if [[ "$INPUT" == "-" ]]; then
         NAMESPACE=""
     else
         NAMESPACE="${INPUT:-$SAVED_NAMESPACE}"
     fi
 else
-    read -rp "Namespace        (Enter for cluster default): " NAMESPACE
+    read -rp "Namespace             (Enter for cluster default): " NAMESPACE
+fi
+
+# ── Prompt: imagePullSecret name ─────────────────────────────────────────────
+if [[ -n "$SAVED_PULL_SECRET" ]]; then
+    read -rp "imagePullSecret name  [${SAVED_PULL_SECRET}] (Enter=keep, '-'=clear): " INPUT
+    if [[ "$INPUT" == "-" ]]; then
+        IMAGE_PULL_SECRET=""
+    else
+        IMAGE_PULL_SECRET="${INPUT:-$SAVED_PULL_SECRET}"
+    fi
+else
+    read -rp "imagePullSecret name  (Enter to skip): " IMAGE_PULL_SECRET
+fi
+
+# ── Prompt: imagePullSecret file ─────────────────────────────────────────────
+if [[ -n "$SAVED_PULL_SECRET_FILE" ]]; then
+    read -rp "imagePullSecret file  [${SAVED_PULL_SECRET_FILE}] (Enter=keep, '-'=clear): " INPUT
+    if [[ "$INPUT" == "-" ]]; then
+        IMAGE_PULL_SECRET_FILE=""
+    else
+        IMAGE_PULL_SECRET_FILE="${INPUT:-$SAVED_PULL_SECRET_FILE}"
+    fi
+else
+    read -rp "imagePullSecret file  (Enter to skip): " IMAGE_PULL_SECRET_FILE
 fi
 
 # ── Persist updated defaults ─────────────────────────────────────────────────
 {
-    grep -v '^IMAGE_PULL_SECRET=' "$DEFAULTS_FILE" | grep -v '^NAMESPACE=' || true
-    [[ -n "$IMAGE_PULL_SECRET" ]] && echo "IMAGE_PULL_SECRET=${IMAGE_PULL_SECRET}"
-    [[ -n "$NAMESPACE"         ]] && echo "NAMESPACE=${NAMESPACE}"
+    grep -v '^IMAGE_PULL_SECRET=' "$DEFAULTS_FILE" \
+        | grep -v '^IMAGE_PULL_SECRET_FILE=' \
+        | grep -v '^NAMESPACE=' || true
+    [[ -n "$NAMESPACE"            ]] && echo "NAMESPACE=${NAMESPACE}"
+    [[ -n "$IMAGE_PULL_SECRET"    ]] && echo "IMAGE_PULL_SECRET=${IMAGE_PULL_SECRET}"
+    [[ -n "$IMAGE_PULL_SECRET_FILE" ]] && echo "IMAGE_PULL_SECRET_FILE=${IMAGE_PULL_SECRET_FILE}"
 } > "${DEFAULTS_FILE}.tmp" && mv "${DEFAULTS_FILE}.tmp" "$DEFAULTS_FILE"
 
 # ── Render YAML ──────────────────────────────────────────────────────────────
@@ -89,5 +105,6 @@ render() {
 NS_FLAG=()
 [[ -n "$NAMESPACE" ]] && NS_FLAG=(-n "$NAMESPACE")
 
+[[ -n "$IMAGE_PULL_SECRET_FILE" ]] && kubectl apply "${NS_FLAG[@]}" -f "$IMAGE_PULL_SECRET_FILE"
 [[ -n "$EXTRA" ]] && kubectl apply "${NS_FLAG[@]}" -f "$EXTRA"
 render | kubectl apply "${NS_FLAG[@]}" -f -

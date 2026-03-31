@@ -53,7 +53,7 @@ claude)
     CREDS_FILE="${4:-${HOME}/.config/gcloud/application_default_credentials.json}"
 
     if [[ -z "$PROJECT_ID" || -z "$REGION" ]]; then
-        echo "Usage: create-secrets.sh claude <PROJECT_ID> <REGION> [CREDS_FILE]" >&2
+        echo "Usage: make create-claude-vertex-secret PROJECT_ID=<id> REGION=<region> [CREDS_FILE=<path>]" >&2
         echo "  CREDS_FILE defaults to ~/.config/gcloud/application_default_credentials.json" >&2
         exit 1
     fi
