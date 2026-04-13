@@ -7,107 +7,121 @@
 # --------------------------------------------------------------------------
 # Build  (prompts for registry/image_tag, saves to .push-defaults)
 # --------------------------------------------------------------------------
-.PHONY: build-gemini-golang
-build-gemini-golang:  ## Build Gemini CLI + Golang + Git image
-	@bash scripts/build.sh gemini-cli-golang containerfiles/Containerfile.gemini golang
+.PHONY: build-opencode-golang
+build-opencode-golang:  ## Build OpenCode + Golang + Git image
+	@bash scripts/build.sh opencode-golang containerfiles/Containerfile.opencode golang
 
-.PHONY: build-gemini-python
-build-gemini-python:  ## Build Gemini CLI + Python3 + Git image
-	@bash scripts/build.sh gemini-cli-python containerfiles/Containerfile.gemini python
-
-.PHONY: build-claude-golang
-build-claude-golang:  ## Build Claude Code + Golang + Git image
-	@bash scripts/build.sh claude-code-golang containerfiles/Containerfile.claude golang
-
-.PHONY: build-claude-python
-build-claude-python:  ## Build Claude Code + Python3 + Git image
-	@bash scripts/build.sh claude-code-python containerfiles/Containerfile.claude python
-
-.PHONY: build-claude
-build-claude: build-claude-golang build-claude-python  ## Build both Claude Code images (golang + python)
-
-.PHONY: build-gemini
-build-gemini: build-gemini-golang build-gemini-python  ## Build both Gemini CLI images (golang + python)
+.PHONY: build-opencode-python
+build-opencode-python:  ## Build OpenCode + Python3 + Git image
+	@bash scripts/build.sh opencode-python containerfiles/Containerfile.opencode python
 
 .PHONY: build-all
-build-all: build-claude build-gemini  ## Build all four images
+build-all: build-opencode-golang build-opencode-python  ## Build both OpenCode images (golang + python)
+
+# --------------------------------------------------------------------------
+# Build fast  (non-interactive — uses saved .push-defaults, no prompts)
+# --------------------------------------------------------------------------
+.PHONY: build-fast-opencode-golang
+build-fast-opencode-golang:  ## Build opencode-golang (no prompts, uses .push-defaults)
+	podman build -f containerfiles/Containerfile.opencode --build-arg LANG=golang --target final -t $(REGISTRY)/opencode-golang:$(IMAGE_TAG) .
+
+.PHONY: build-fast-opencode-python
+build-fast-opencode-python:  ## Build opencode-python (no prompts, uses .push-defaults)
+	podman build -f containerfiles/Containerfile.opencode --build-arg LANG=python --target final -t $(REGISTRY)/opencode-python:$(IMAGE_TAG) .
 
 # --------------------------------------------------------------------------
 # Push  (reads registry/image_tag from .push-defaults — no prompts)
 # --------------------------------------------------------------------------
-.PHONY: push-gemini-golang
-push-gemini-golang:  ## Push gemini-cli-golang (uses .push-defaults)
-	@bash scripts/push.sh gemini-cli-golang
+.PHONY: push-opencode-golang
+push-opencode-golang:  ## Push opencode-golang (uses .push-defaults)
+	@bash scripts/push.sh opencode-golang
 
-.PHONY: push-gemini-python
-push-gemini-python:  ## Push gemini-cli-python (uses .push-defaults)
-	@bash scripts/push.sh gemini-cli-python
-
-.PHONY: push-claude-golang
-push-claude-golang:  ## Push claude-code-golang (uses .push-defaults)
-	@bash scripts/push.sh claude-code-golang
-
-.PHONY: push-claude-python
-push-claude-python:  ## Push claude-code-python (uses .push-defaults)
-	@bash scripts/push.sh claude-code-python
-
-.PHONY: push-claude
-push-claude: push-claude-golang push-claude-python  ## Build and push both Claude Code images
-
-.PHONY: push-gemini
-push-gemini: push-gemini-golang push-gemini-python  ## Build and push both Gemini CLI images
+.PHONY: push-opencode-python
+push-opencode-python:  ## Push opencode-python (uses .push-defaults)
+	@bash scripts/push.sh opencode-python
 
 .PHONY: podman-push
-podman-push: push-claude push-gemini  ## Build and push all four images (also tags :latest)
+podman-push: push-opencode-golang push-opencode-python  ## Push both OpenCode images (also tags :latest)
+
+# --------------------------------------------------------------------------
+# Redeploy  (build + push + restart container in one shot)
+# --------------------------------------------------------------------------
+.PHONY: redeploy-podman-opencode-golang
+redeploy-podman-opencode-golang: build-fast-opencode-golang push-opencode-golang  ## Rebuild, push, and restart opencode-golang in podman
+	-podman stop opencode-golang 2>/dev/null || true
+	@bash scripts/podman-run.sh opencode-golang tui
+
+.PHONY: redeploy-podman-opencode-python
+redeploy-podman-opencode-python: build-fast-opencode-python push-opencode-python  ## Rebuild, push, and restart opencode-python in podman
+	-podman stop opencode-python 2>/dev/null || true
+	@bash scripts/podman-run.sh opencode-python tui
 
 # --------------------------------------------------------------------------
 # Secrets  (generates gitignored k8s/secrets/*.yaml — no kubectl required)
 # --------------------------------------------------------------------------
-.PHONY: create-gemini-secret
-create-gemini-secret:  ## Generate Gemini secret YAML.  Requires: GEMINI_API_KEY=<key>
-	@bash scripts/create-secrets.sh gemini "$(GEMINI_API_KEY)"
-
-.PHONY: create-claude-vertex-secret
-create-claude-vertex-secret:  ## Generate Claude Vertex secret YAML.  Requires: PROJECT_ID=<id> REGION=<region>  Optional: CREDS_FILE=<path> (default: ~/.config/gcloud/application_default_credentials.json)
-	@bash scripts/create-secrets.sh claude "$(PROJECT_ID)" "$(REGION)" "$(CREDS_FILE)"
+.PHONY: create-opencode-secret
+create-opencode-secret:  ## Create Podman + K8s secrets from k8s/secrets/opencode-secret.yaml.  Optional: CREDS_FILE=<path>
+	@bash scripts/create-secrets.sh "$(CREDS_FILE)"
 
 # --------------------------------------------------------------------------
 # K8s deploy  (prompts for imagePullSecret + namespace, substitutes image refs)
 # --------------------------------------------------------------------------
-.PHONY: deploy-k8s-gemini-golang
-deploy-k8s-gemini-golang:  ## Deploy gemini-golang to K8s
-	@bash scripts/deploy.sh k8s/gemini-golang.yaml k8s/secrets/gemini-secret.yaml
+.PHONY: deploy-k8s-opencode-golang
+deploy-k8s-opencode-golang:  ## Deploy opencode-golang to K8s
+	@bash scripts/deploy.sh k8s/opencode-golang.yaml k8s/secrets/opencode-secret.yaml.k8s
 
-.PHONY: deploy-k8s-gemini-python
-deploy-k8s-gemini-python:  ## Deploy gemini-python to K8s
-	@bash scripts/deploy.sh k8s/gemini-python.yaml k8s/secrets/gemini-secret.yaml
-
-.PHONY: deploy-k8s-claude-golang
-deploy-k8s-claude-golang:  ## Deploy claude-golang to K8s
-	@bash scripts/deploy.sh k8s/claude-golang.yaml k8s/secrets/claude-vertex-secret.yaml
-
-.PHONY: deploy-k8s-claude-python
-deploy-k8s-claude-python:  ## Deploy claude-python to K8s
-	@bash scripts/deploy.sh k8s/claude-python.yaml k8s/secrets/claude-vertex-secret.yaml
+.PHONY: deploy-k8s-opencode-python
+deploy-k8s-opencode-python:  ## Deploy opencode-python to K8s
+	@bash scripts/deploy.sh k8s/opencode-python.yaml k8s/secrets/opencode-secret.yaml.k8s
 
 # --------------------------------------------------------------------------
 # Podman deploy  (native podman run — reads secrets from podman secret store)
 # --------------------------------------------------------------------------
-.PHONY: deploy-podman-gemini-golang
-deploy-podman-gemini-golang:  ## Run gemini-golang container with podman (run create-gemini-secret first)
-	@bash scripts/podman-run.sh gemini-golang
+.PHONY: deploy-podman-opencode-golang
+deploy-podman-opencode-golang:  ## Run opencode-golang container with podman (interactive TUI)
+	@bash scripts/podman-run.sh opencode-golang tui
 
-.PHONY: deploy-podman-gemini-python
-deploy-podman-gemini-python:  ## Run gemini-python container with podman (run create-gemini-secret first)
-	@bash scripts/podman-run.sh gemini-python
+.PHONY: deploy-podman-opencode-python
+deploy-podman-opencode-python:  ## Run opencode-python container with podman (interactive TUI)
+	@bash scripts/podman-run.sh opencode-python tui
 
-.PHONY: deploy-podman-claude-golang
-deploy-podman-claude-golang:  ## Run claude-golang container with podman (run create-claude-vertex-secret first)
-	@bash scripts/podman-run.sh claude-golang
+.PHONY: resume-podman-opencode-golang
+resume-podman-opencode-golang:  ## Resume last opencode-golang session in podman
+	@bash scripts/podman-run.sh opencode-golang tui --continue
 
-.PHONY: deploy-podman-claude-python
-deploy-podman-claude-python:  ## Run claude-python container with podman (run create-claude-vertex-secret first)
-	@bash scripts/podman-run.sh claude-python
+.PHONY: resume-podman-opencode-python
+resume-podman-opencode-python:  ## Resume last opencode-python session in podman
+	@bash scripts/podman-run.sh opencode-python tui --continue
+
+.PHONY: serve-podman-opencode-golang
+serve-podman-opencode-golang:  ## Start opencode-golang server on localhost:4096 (background)
+	@bash scripts/podman-run.sh opencode-golang serve
+
+.PHONY: serve-podman-opencode-python
+serve-podman-opencode-python:  ## Start opencode-python server on localhost:4096 (background)
+	@bash scripts/podman-run.sh opencode-python serve
+
+# --------------------------------------------------------------------------
+# Podman attach  (connect a local TUI to a running serve container)
+# --------------------------------------------------------------------------
+.PHONY: attach-podman-opencode-golang
+attach-podman-opencode-golang:  ## Attach TUI to running opencode-golang serve container
+	opencode attach http://localhost:4096
+
+.PHONY: attach-podman-opencode-python
+attach-podman-opencode-python:  ## Attach TUI to running opencode-python serve container
+	opencode attach http://localhost:4096
+
+# --------------------------------------------------------------------------
+# K8s connect  (port-forward pod to localhost:4096)
+# --------------------------------------------------------------------------
+.PHONY: connect-opencode-golang
+connect-opencode-golang:  ## Port-forward opencode-golang pod to localhost:4096
+	@bash scripts/connect.sh opencode-golang
+
+.PHONY: connect-opencode-python
+connect-opencode-python:  ## Port-forward opencode-python pod to localhost:4096
+	@bash scripts/connect.sh opencode-python
 
 # --------------------------------------------------------------------------
 # Help

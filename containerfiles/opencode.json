@@ -1,0 +1,3 @@
+{
+  "enabled_providers": ["google-vertex-anthropic", "google"]
+}
