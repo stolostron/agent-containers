@@ -9,10 +9,16 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(chmod:*)",
       "Bash(make help:*)",
-      "Bash(podman images:*)",
-      "Bash(bash scripts/build.sh claude-code-python containerfiles/Containerfile.claude python)",
-      "Bash(bash scripts/build.sh gemini-cli-golang containerfiles/Containerfile.gemini golang)",
-      "Bash(curl -s https://api.github.com/repos/github/github-mcp-server/releases/latest)"
+      "Bash(wc:*)",
+      "WebFetch(domain:opencode.ai)",
+      "WebFetch(domain:www.mintlify.com)",
+      "Bash(grep:*)",
+      "Bash(awk '/^func buildCredentials/,/^}/' internal/controller/pod_builder.go)",
+      "Bash(podman build:*)",
+      "Bash(make build-fast-opencode-python:*)",
+      "Bash(make push-opencode-python:*)",
+      "Bash(podman run:*)",
+      "Bash(git stash:*)"
     ]
   }
 }

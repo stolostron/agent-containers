@@ -7,79 +7,121 @@
 # --------------------------------------------------------------------------
 # Publish  (build + push; prompts once for registry/image_tag, saves to .push-defaults)
 # --------------------------------------------------------------------------
-.PHONY: publish-claude
-publish-claude:  ## Build and push both Claude Code images (golang + python)
-	@bash scripts/publish.sh claude
+.PHONY: build-opencode-golang
+build-opencode-golang:  ## Build OpenCode + Golang + Git image
+	@bash scripts/build.sh opencode-golang containerfiles/Containerfile.opencode golang
 
-.PHONY: publish-gemini
-publish-gemini:  ## Build and push both Gemini CLI images (golang + python)
-	@bash scripts/publish.sh gemini
+.PHONY: build-opencode-python
+build-opencode-python:  ## Build OpenCode + Python3 + Git image
+	@bash scripts/build.sh opencode-python containerfiles/Containerfile.opencode python
+
+.PHONY: build-all
+build-all: build-opencode-golang build-opencode-python  ## Build both OpenCode images (golang + python)
+
+# --------------------------------------------------------------------------
+# Build fast  (non-interactive — uses saved .push-defaults, no prompts)
+# --------------------------------------------------------------------------
+.PHONY: build-fast-opencode-golang
+build-fast-opencode-golang:  ## Build opencode-golang (no prompts, uses .push-defaults)
+	podman build -f containerfiles/Containerfile.opencode --build-arg LANG=golang --target final -t $(REGISTRY)/opencode-golang:$(IMAGE_TAG) .
+
+.PHONY: build-fast-opencode-python
+build-fast-opencode-python:  ## Build opencode-python (no prompts, uses .push-defaults)
+	podman build -f containerfiles/Containerfile.opencode --build-arg LANG=python --target final -t $(REGISTRY)/opencode-python:$(IMAGE_TAG) .
 
 # --------------------------------------------------------------------------
 # Exec prompt  (interactive: select AI, language, and enter a prompt)
 # --------------------------------------------------------------------------
-.PHONY: exec-prompt
-exec-prompt:  ## Launch a one-shot AI agent pod (select AI + language interactively, or: AI=claude LANG=golang PROMPT="...")
-	@bash scripts/exec_prompt.sh "$(AI)" "$(LANG)" "$(PROMPT)"
+.PHONY: push-opencode-golang
+push-opencode-golang:  ## Push opencode-golang (uses .push-defaults)
+	@bash scripts/push.sh opencode-golang
+
+.PHONY: push-opencode-python
+push-opencode-python:  ## Push opencode-python (uses .push-defaults)
+	@bash scripts/push.sh opencode-python
+
+.PHONY: podman-push
+podman-push: push-opencode-golang push-opencode-python  ## Push both OpenCode images (also tags :latest)
+
+# --------------------------------------------------------------------------
+# Redeploy  (build + push + restart container in one shot)
+# --------------------------------------------------------------------------
+.PHONY: redeploy-podman-opencode-golang
+redeploy-podman-opencode-golang: build-fast-opencode-golang push-opencode-golang  ## Rebuild, push, and restart opencode-golang in podman
+	-podman stop opencode-golang 2>/dev/null || true
+	@bash scripts/podman-run.sh opencode-golang tui
+
+.PHONY: redeploy-podman-opencode-python
+redeploy-podman-opencode-python: build-fast-opencode-python push-opencode-python  ## Rebuild, push, and restart opencode-python in podman
+	-podman stop opencode-python 2>/dev/null || true
+	@bash scripts/podman-run.sh opencode-python tui
 
 # --------------------------------------------------------------------------
 # Secrets  (generates gitignored k8s/secrets/*.yaml — no kubectl required)
 # --------------------------------------------------------------------------
-.PHONY: setup-github
-setup-github:  ## Generate ephemeral SSH key, store as secret, register as GitHub deploy key.  Requires: REPO=owner/repo  Optional: READ_ONLY=false
-	@if [ -z "$(REPO)" ]; then echo "Error: REPO=owner/repo is required" >&2; exit 1; fi
-	@bash scripts/setup-github.sh "$(REPO)" "$(or $(READ_ONLY),false)"
-
-# --------------------------------------------------------------------------
-# Cleanup  (remove completed/failed agent pods and containers)
-# --------------------------------------------------------------------------
-.PHONY: clean-agents-k8s
-clean-agents-k8s:  ## Delete completed and failed agent pods in K8s
-	kubectl delete pods -l agent-container=true \
-	    --field-selector='status.phase!=Running' \
-	    $(if $(NAMESPACE),-n $(NAMESPACE),)
-
-.PHONY: clean-agents-podman
-clean-agents-podman:  ## Remove stopped agent containers in podman
-	podman rm --filter label=agent-container=true
-
-.PHONY: create-gemini-secret
-create-gemini-secret:  ## Generate Gemini secret YAML.  Requires: GEMINI_API_KEY=<key>
-	@bash scripts/create-secrets.sh gemini "$(GEMINI_API_KEY)"
-
-.PHONY: create-claude-vertex-secret
-create-claude-vertex-secret:  ## Generate Claude Vertex secret YAML.  Requires: PROJECT_ID=<id> REGION=<region>  Optional: CREDS_FILE=<path> (default: ~/.config/gcloud/application_default_credentials.json)
-	@bash scripts/create-secrets.sh claude "$(PROJECT_ID)" "$(REGION)" "$(CREDS_FILE)"
+.PHONY: create-opencode-secret
+create-opencode-secret:  ## Create Podman + K8s secrets from k8s/secrets/opencode-secret.yaml.  Optional: CREDS_FILE=<path>
+	@bash scripts/create-secrets.sh "$(CREDS_FILE)"
 
 # --------------------------------------------------------------------------
 # K8s deploy  (publish + deploy in one command; prompts once for all details)
 # --------------------------------------------------------------------------
-.PHONY: deploy-k8s-claude-golang
-deploy-k8s-claude-golang: publish-claude  ## Publish and deploy Claude Code golang to K8s
-	@bash scripts/deploy.sh k8s/claude-golang.yaml k8s/secrets/claude-vertex-secret.yaml k8s/secrets/github-secret.yaml
+.PHONY: deploy-k8s-opencode-golang
+deploy-k8s-opencode-golang:  ## Deploy opencode-golang to K8s
+	@bash scripts/deploy.sh k8s/opencode-golang.yaml k8s/secrets/opencode-secret.yaml.k8s
 
-.PHONY: deploy-k8s-claude-python
-deploy-k8s-claude-python: publish-claude  ## Publish and deploy Claude Code python to K8s
-	@bash scripts/deploy.sh k8s/claude-python.yaml k8s/secrets/claude-vertex-secret.yaml k8s/secrets/github-secret.yaml
-
-.PHONY: deploy-k8s-gemini-golang
-deploy-k8s-gemini-golang: publish-gemini  ## Publish and deploy Gemini CLI golang to K8s
-	@bash scripts/deploy.sh k8s/gemini-golang.yaml k8s/secrets/gemini-secret.yaml
-
-.PHONY: deploy-k8s-gemini-python
-deploy-k8s-gemini-python: publish-gemini  ## Publish and deploy Gemini CLI python to K8s
-	@bash scripts/deploy.sh k8s/gemini-python.yaml k8s/secrets/gemini-secret.yaml
+.PHONY: deploy-k8s-opencode-python
+deploy-k8s-opencode-python:  ## Deploy opencode-python to K8s
+	@bash scripts/deploy.sh k8s/opencode-python.yaml k8s/secrets/opencode-secret.yaml.k8s
 
 # --------------------------------------------------------------------------
 # Podman deploy  (publish + run in one command)
 # --------------------------------------------------------------------------
-.PHONY: deploy-podman-claude-golang
-deploy-podman-claude-golang: publish-claude  ## Publish and run Claude Code golang with podman
-	@bash scripts/podman-run.sh claude-golang
+.PHONY: deploy-podman-opencode-golang
+deploy-podman-opencode-golang:  ## Run opencode-golang container with podman (interactive TUI)
+	@bash scripts/podman-run.sh opencode-golang tui
 
-.PHONY: deploy-podman-claude-python
-deploy-podman-claude-python: publish-claude  ## Publish and run Claude Code python with podman
-	@bash scripts/podman-run.sh claude-python
+.PHONY: deploy-podman-opencode-python
+deploy-podman-opencode-python:  ## Run opencode-python container with podman (interactive TUI)
+	@bash scripts/podman-run.sh opencode-python tui
+
+.PHONY: resume-podman-opencode-golang
+resume-podman-opencode-golang:  ## Resume last opencode-golang session in podman
+	@bash scripts/podman-run.sh opencode-golang tui --continue
+
+.PHONY: resume-podman-opencode-python
+resume-podman-opencode-python:  ## Resume last opencode-python session in podman
+	@bash scripts/podman-run.sh opencode-python tui --continue
+
+.PHONY: serve-podman-opencode-golang
+serve-podman-opencode-golang:  ## Start opencode-golang server on localhost:4096 (background)
+	@bash scripts/podman-run.sh opencode-golang serve
+
+.PHONY: serve-podman-opencode-python
+serve-podman-opencode-python:  ## Start opencode-python server on localhost:4096 (background)
+	@bash scripts/podman-run.sh opencode-python serve
+
+# --------------------------------------------------------------------------
+# Podman attach  (connect a local TUI to a running serve container)
+# --------------------------------------------------------------------------
+.PHONY: attach-podman-opencode-golang
+attach-podman-opencode-golang:  ## Attach TUI to running opencode-golang serve container
+	opencode attach http://localhost:4096
+
+.PHONY: attach-podman-opencode-python
+attach-podman-opencode-python:  ## Attach TUI to running opencode-python serve container
+	opencode attach http://localhost:4096
+
+# --------------------------------------------------------------------------
+# K8s connect  (port-forward pod to localhost:4096)
+# --------------------------------------------------------------------------
+.PHONY: connect-opencode-golang
+connect-opencode-golang:  ## Port-forward opencode-golang pod to localhost:4096
+	@bash scripts/connect.sh opencode-golang
+
+.PHONY: connect-opencode-python
+connect-opencode-python:  ## Port-forward opencode-python pod to localhost:4096
+	@bash scripts/connect.sh opencode-python
 
 .PHONY: deploy-podman-gemini-golang
 deploy-podman-gemini-golang: publish-gemini  ## Publish and run Gemini CLI golang with podman

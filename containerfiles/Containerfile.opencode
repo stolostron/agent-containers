@@ -1,10 +1,10 @@
 ARG LANG=golang
 
-# ---- Base: node + git + gemini-cli ----
+# ---- Base: node + common tools + opencode ----
 FROM node:20-slim AS base-common
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl ca-certificates python3 make g++ openssh-client \
+    git curl ca-certificates zsh fzf vim nano less jq ripgrep openssh-client \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # npm global prefix under /usr/local/share, owned by the non-root "node" user
@@ -19,17 +19,22 @@ ENV PATH=$PATH:/usr/local/share/npm-global/bin
 COPY --chown=node:node scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 USER node
-RUN npm install -g @google/gemini-cli && npm cache clean --force
-
-# Pre-configure Gemini CLI
-RUN mkdir -p /home/node/.gemini && \
-    printf '{\n  "ui": {\n    "showMemoryUsage": true\n  },\n  "security": {\n    "auth": {\n      "selectedType": "gemini-api-key"\n    }\n  }\n}\n' \
-        > /home/node/.gemini/settings.json && \
-    printf '{\n  "/workspace": "TRUST_FOLDER"\n}\n' \
-        > /home/node/.gemini/trustedFolders.json
-
+RUN npm install -g opencode-ai && npm cache clean --force
 WORKDIR /workspace
+
+ENV DEVCONTAINER=true
+ENV EDITOR=nano
+ENV NODE_OPTIONS=--max-old-space-size=4096
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Provider config: restrict to Claude (Vertex) and Gemini only.
+# Credentials are injected at runtime via K8s/Podman secrets.
+COPY --chown=node:node containerfiles/opencode.json /workspace/opencode.json
+
+# Entrypoint: configures git credentials at startup if GITHUB_PAT is set
+USER root
+COPY --chmod=755 containerfiles/entrypoint.sh /usr/local/bin/entrypoint.sh
+USER node
 
 # ---- Golang variant ----
 FROM base-common AS lang-golang
@@ -47,5 +52,9 @@ USER node
 
 # ---- Final stage (selected by LANG build arg) ----
 FROM lang-${LANG} AS final
-ENV GEMINI_API_KEY=""
-CMD ["gemini"]
+
+# GCP credentials path for Claude via Vertex AI — value injected at runtime
+ENV GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud/credentials.json
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["opencode"]
