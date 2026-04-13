@@ -8,7 +8,17 @@
       "Bash(curl -fsSL https://claude.ai/install.sh)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(chmod:*)",
-      "Bash(make help:*)"
+      "Bash(make help:*)",
+      "Bash(wc:*)",
+      "WebFetch(domain:opencode.ai)",
+      "WebFetch(domain:www.mintlify.com)",
+      "Bash(grep:*)",
+      "Bash(awk '/^func buildCredentials/,/^}/' internal/controller/pod_builder.go)",
+      "Bash(podman build:*)",
+      "Bash(make build-fast-opencode-python:*)",
+      "Bash(make push-opencode-python:*)",
+      "Bash(podman run:*)",
+      "Bash(git stash:*)"
     ]
   }
 }

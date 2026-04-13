@@ -4,15 +4,19 @@ ARG LANG=golang
 FROM node:20-slim AS base-common
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl ca-certificates zsh fzf vim nano less jq ripgrep \
+    git curl ca-certificates zsh fzf vim nano less jq ripgrep openssh-client \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # npm global prefix under /usr/local/share, owned by the non-root "node" user
 # (the "node" user already exists in the base image)
 RUN mkdir -p /usr/local/share/npm-global \
-    && chown -R node:node /usr/local/share/npm-global
+    && chown -R node:node /usr/local/share/npm-global \
+    && mkdir -p /workspace \
+    && chown node:node /workspace
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
+
+COPY --chown=node:node scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 USER node
 RUN npm install -g opencode-ai && npm cache clean --force
@@ -21,6 +25,7 @@ WORKDIR /workspace
 ENV DEVCONTAINER=true
 ENV EDITOR=nano
 ENV NODE_OPTIONS=--max-old-space-size=4096
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Provider config: restrict to Claude (Vertex) and Gemini only.
 # Credentials are injected at runtime via K8s/Podman secrets.

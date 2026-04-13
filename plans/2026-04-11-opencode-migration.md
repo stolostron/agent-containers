@@ -96,3 +96,58 @@ opencode -s <session-id>
 - `opencode run -s <session-id>` (non-interactive resume of a specific session) has a known upstream bug and may not work reliably — use `opencode run -c` for last-session continuation instead.
 - Provider filtering is at the provider level only; individual model filtering is not yet supported by OpenCode.
 - The `opencode.json` is placed in `/workspace` (the WORKDIR), so it applies as a project-level config automatically on startup.
+
+---
+
+## Implementation Summary
+
+**Completed: 2026-04-13**
+
+The full migration from Claude Code + Gemini CLI containers to a unified OpenCode container was implemented and staged. Here is a summary of what was built:
+
+### Containerfile (`containerfiles/Containerfile.opencode`)
+- Renamed from `Containerfile.claude`, updated to install `opencode-ai` (npm) instead of `@anthropic-ai/claude-code`
+- Bakes in `opencode.json` (provider allowlist) and `entrypoint.sh` at build time
+- Drops `CLAUDE_CODE_USE_VERTEX=1`; retains `GOOGLE_APPLICATION_CREDENTIALS` path
+- `ENTRYPOINT` changed to `entrypoint.sh`; `CMD` is `["opencode"]`
+
+### Entrypoint (`containerfiles/entrypoint.sh`)
+- Writes `~/.local/share/opencode/auth.json` at startup from `GOOGLE_API_KEY` (OpenCode reads API keys from auth.json, not env vars)
+- Optionally configures git credential store from `GITHUB_PAT`
+- Hands off to `exec "$@"` so both `tui` and `serve` modes work
+
+### Provider config (`containerfiles/opencode.json`)
+- `{"enabled_providers": ["google-vertex-anthropic", "google"]}` baked into image
+
+### K8s manifests (`k8s/opencode-golang.yaml`, `k8s/opencode-python.yaml`)
+- Single `opencode-secret` provides all credentials: `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `GOOGLE_API_KEY`, optional `GITHUB_PAT`, and ADC JSON file
+- Mounts ADC JSON as a volume at `/app/gcloud/credentials.json`
+
+### Secret template (`k8s/secrets/opencode-secret.yaml.template`)
+- Uses `stringData:` (plaintext) for ease of editing; script converts to base64 for the `.k8s` output file
+- `.gitignore` updated to also ignore `*.yaml.k8s`
+
+### `scripts/create-secrets.sh`
+- Rewritten to read from `opencode-secret.yaml` (copied from template) rather than accepting CLI args
+- Generates `opencode-secret.yaml.k8s` (base64-encoded, for `kubectl apply`)
+- Creates `opencode-secret` Podman secret as JSON for key-by-name extraction
+
+### `scripts/podman-run.sh`
+- Unified `opencode-golang|opencode-python` case replacing four agent-specific cases
+- Added `tui` mode (interactive, default) and `serve` mode (background server on port 4096)
+- Mounts a named volume `<type>-opencode-local` at `/home/node/.local` to persist OpenCode sessions across runs
+- `optional_secret_val` helper for `GITHUB_PAT` (absent key returns empty string instead of error)
+- Fixed Podman secret reading to use raw filesystem paths (compatible with Podman < 4.7 which lacks `--showsecret`)
+
+### `scripts/connect.sh` (new)
+- `kubectl port-forward pod/<name> 4096:4096` using namespace from `.push-defaults`
+
+### `Makefile`
+- Replaced all `build-gemini-*`, `build-claude-*`, `push-gemini-*`, `push-claude-*`, `deploy-podman-*`, `deploy-k8s-*` targets with `opencode-*` equivalents
+- Added `build-fast-opencode-*` targets (non-interactive, reads `.push-defaults` directly)
+- Added `redeploy-podman-opencode-*` targets (build + push + restart in one step)
+- Added `resume-podman-opencode-*` and `serve-podman-opencode-*` targets
+- Added `attach-podman-opencode-*` and `connect-opencode-*` targets
+
+### `README.md`
+- Full rewrite documenting OpenCode, provider selection, session management, server/attach workflow, and updated directory structure

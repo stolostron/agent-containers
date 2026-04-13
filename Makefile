@@ -5,7 +5,7 @@
 -include .push-defaults
 
 # --------------------------------------------------------------------------
-# Build  (prompts for registry/image_tag, saves to .push-defaults)
+# Publish  (build + push; prompts once for registry/image_tag, saves to .push-defaults)
 # --------------------------------------------------------------------------
 .PHONY: build-opencode-golang
 build-opencode-golang:  ## Build OpenCode + Golang + Git image
@@ -30,7 +30,7 @@ build-fast-opencode-python:  ## Build opencode-python (no prompts, uses .push-de
 	podman build -f containerfiles/Containerfile.opencode --build-arg LANG=python --target final -t $(REGISTRY)/opencode-python:$(IMAGE_TAG) .
 
 # --------------------------------------------------------------------------
-# Push  (reads registry/image_tag from .push-defaults — no prompts)
+# Exec prompt  (interactive: select AI, language, and enter a prompt)
 # --------------------------------------------------------------------------
 .PHONY: push-opencode-golang
 push-opencode-golang:  ## Push opencode-golang (uses .push-defaults)
@@ -64,7 +64,7 @@ create-opencode-secret:  ## Create Podman + K8s secrets from k8s/secrets/opencod
 	@bash scripts/create-secrets.sh "$(CREDS_FILE)"
 
 # --------------------------------------------------------------------------
-# K8s deploy  (prompts for imagePullSecret + namespace, substitutes image refs)
+# K8s deploy  (publish + deploy in one command; prompts once for all details)
 # --------------------------------------------------------------------------
 .PHONY: deploy-k8s-opencode-golang
 deploy-k8s-opencode-golang:  ## Deploy opencode-golang to K8s
@@ -75,7 +75,7 @@ deploy-k8s-opencode-python:  ## Deploy opencode-python to K8s
 	@bash scripts/deploy.sh k8s/opencode-python.yaml k8s/secrets/opencode-secret.yaml.k8s
 
 # --------------------------------------------------------------------------
-# Podman deploy  (native podman run — reads secrets from podman secret store)
+# Podman deploy  (publish + run in one command)
 # --------------------------------------------------------------------------
 .PHONY: deploy-podman-opencode-golang
 deploy-podman-opencode-golang:  ## Run opencode-golang container with podman (interactive TUI)
@@ -122,6 +122,14 @@ connect-opencode-golang:  ## Port-forward opencode-golang pod to localhost:4096
 .PHONY: connect-opencode-python
 connect-opencode-python:  ## Port-forward opencode-python pod to localhost:4096
 	@bash scripts/connect.sh opencode-python
+
+.PHONY: deploy-podman-gemini-golang
+deploy-podman-gemini-golang: publish-gemini  ## Publish and run Gemini CLI golang with podman
+	@bash scripts/podman-run.sh gemini-golang
+
+.PHONY: deploy-podman-gemini-python
+deploy-podman-gemini-python: publish-gemini  ## Publish and run Gemini CLI python with podman
+	@bash scripts/podman-run.sh gemini-python
 
 # --------------------------------------------------------------------------
 # Help
