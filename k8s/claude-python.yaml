@@ -6,6 +6,7 @@ metadata:
     app: claude-python
     tool: claude-code
     lang: python
+    agent-container: "true"
 spec:
   IMAGE_PULL_SECRET_BLOCK
   containers:
@@ -26,9 +27,14 @@ spec:
               key: CLOUD_ML_REGION
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: /app/gcloud/credentials.json
+        - name: GIT_SSH_COMMAND
+          value: "ssh -i /home/node/.ssh/id_rsa -o StrictHostKeyChecking=accept-new"
       volumeMounts:
         - name: gcloud-creds
           mountPath: /app/gcloud
+          readOnly: true
+        - name: github-ssh
+          mountPath: /run/secrets/github
           readOnly: true
       stdin: true
       tty: true
@@ -46,4 +52,11 @@ spec:
         items:
           - key: application_default_credentials.json
             path: credentials.json
+    - name: github-ssh
+      secret:
+        secretName: github-secret
+        defaultMode: 0444
+        items:
+          - key: ssh_private_key
+            path: id_rsa
   restartPolicy: Never

@@ -4,15 +4,19 @@ ARG LANG=golang
 FROM node:20-slim AS base-common
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl ca-certificates python3 make g++ \
+    git curl ca-certificates python3 make g++ openssh-client \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # npm global prefix under /usr/local/share, owned by the non-root "node" user
 # (the "node" user already exists in the base image)
 RUN mkdir -p /usr/local/share/npm-global \
-    && chown -R node:node /usr/local/share/npm-global
+    && chown -R node:node /usr/local/share/npm-global \
+    && mkdir -p /workspace \
+    && chown node:node /workspace
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
+
+COPY --chown=node:node scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 USER node
 RUN npm install -g @google/gemini-cli && npm cache clean --force
@@ -25,6 +29,7 @@ RUN mkdir -p /home/node/.gemini && \
         > /home/node/.gemini/trustedFolders.json
 
 WORKDIR /workspace
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # ---- Golang variant ----
 FROM base-common AS lang-golang

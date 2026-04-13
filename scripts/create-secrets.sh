@@ -16,9 +16,51 @@ SECRETS_DIR="${SCRIPT_DIR}/../k8s/secrets"
 
 b64() { printf '%s' "$1" | base64 -w 0; }
 
+# Write a Podman secret from stdin only if podman is available.
+podman_secret() {
+    local name="$1"
+    if ! command -v podman &>/dev/null; then
+        echo "  (podman not found — skipping Podman secret)"
+        cat > /dev/null   # drain stdin
+        return
+    fi
+    podman secret rm "$name" 2>/dev/null || true
+    podman secret create "$name" -
+    echo "Created Podman secret: ${name}"
+}
+
 MODE="${1:-}"
 
 case "$MODE" in
+
+github)
+    KEY_FILE="${2:-}"
+    if [[ -z "$KEY_FILE" ]]; then
+        echo "Usage: create-secrets.sh github <SSH_PRIVATE_KEY_FILE>" >&2
+        exit 1
+    fi
+    if [[ ! -f "$KEY_FILE" ]]; then
+        echo "Error: SSH key file not found: ${KEY_FILE}" >&2
+        exit 1
+    fi
+
+    KEY_B64=$(base64 -w 0 < "$KEY_FILE")
+
+    # K8s Secret YAML
+    cat > "${SECRETS_DIR}/github-secret.yaml" <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-secret
+type: Opaque
+data:
+  ssh_private_key: ${KEY_B64}
+EOF
+    echo "Generated ${SECRETS_DIR}/github-secret.yaml"
+
+    jq -n --rawfile key "$KEY_FILE" '{"ssh_private_key":$key}' \
+        | podman_secret github-secret
+    ;;
 
 gemini)
     API_KEY="${2:-}"
@@ -39,12 +81,8 @@ data:
 EOF
     echo "Generated ${SECRETS_DIR}/gemini-secret.yaml"
 
-    # Podman secret (JSON so secretKeyRef can extract individual keys)
     printf '{"GEMINI_API_KEY":"%s"}' "$API_KEY" \
-        | podman secret create --replace gemini-secret - 2>/dev/null \
-        || printf '{"GEMINI_API_KEY":"%s"}' "$API_KEY" \
-        | podman secret create gemini-secret -
-    echo "Created Podman secret: gemini-secret"
+        | podman_secret gemini-secret
     ;;
 
 claude)
@@ -80,21 +118,12 @@ data:
 EOF
     echo "Generated ${SECRETS_DIR}/claude-vertex-secret.yaml"
 
-    # Podman secret (JSON so secretKeyRef can extract individual keys).
-    # jq safely handles the credentials JSON which may contain quotes/newlines.
     jq -n \
         --arg pid "$PROJECT_ID" \
         --arg reg "$REGION" \
         --rawfile creds "$CREDS_FILE" \
         '{"ANTHROPIC_VERTEX_PROJECT_ID":$pid,"CLOUD_ML_REGION":$reg,"application_default_credentials.json":$creds}' \
-        | podman secret create --replace claude-vertex-secret - 2>/dev/null \
-        || jq -n \
-            --arg pid "$PROJECT_ID" \
-            --arg reg "$REGION" \
-            --rawfile creds "$CREDS_FILE" \
-            '{"ANTHROPIC_VERTEX_PROJECT_ID":$pid,"CLOUD_ML_REGION":$reg,"application_default_credentials.json":$creds}' \
-        | podman secret create claude-vertex-secret -
-    echo "Created Podman secret: claude-vertex-secret"
+        | podman_secret claude-vertex-secret
     ;;
 
 *)

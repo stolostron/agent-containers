@@ -6,6 +6,7 @@ metadata:
     app: gemini-golang
     tool: gemini-cli
     lang: golang
+    agent-container: "true"
 spec:
   IMAGE_PULL_SECRET_BLOCK
   containers:
@@ -17,6 +18,12 @@ spec:
             secretKeyRef:
               name: gemini-secret
               key: GEMINI_API_KEY
+        - name: GIT_SSH_COMMAND
+          value: "ssh -i /home/node/.ssh/id_rsa -o StrictHostKeyChecking=accept-new"
+      volumeMounts:
+        - name: github-ssh
+          mountPath: /run/secrets/github
+          readOnly: true
       stdin: true
       tty: true
       resources:
@@ -26,4 +33,12 @@ spec:
         limits:
           memory: "1Gi"
           cpu: "1000m"
+  volumes:
+    - name: github-ssh
+      secret:
+        secretName: github-secret
+        defaultMode: 0444
+        items:
+          - key: ssh_private_key
+            path: id_rsa
   restartPolicy: Never

@@ -5,64 +5,44 @@
 -include .push-defaults
 
 # --------------------------------------------------------------------------
-# Build  (prompts for registry/image_tag, saves to .push-defaults)
+# Publish  (build + push; prompts once for registry/image_tag, saves to .push-defaults)
 # --------------------------------------------------------------------------
-.PHONY: build-gemini-golang
-build-gemini-golang:  ## Build Gemini CLI + Golang + Git image
-	@bash scripts/build.sh gemini-cli-golang containerfiles/Containerfile.gemini golang
+.PHONY: publish-claude
+publish-claude:  ## Build and push both Claude Code images (golang + python)
+	@bash scripts/publish.sh claude
 
-.PHONY: build-gemini-python
-build-gemini-python:  ## Build Gemini CLI + Python3 + Git image
-	@bash scripts/build.sh gemini-cli-python containerfiles/Containerfile.gemini python
-
-.PHONY: build-claude-golang
-build-claude-golang:  ## Build Claude Code + Golang + Git image
-	@bash scripts/build.sh claude-code-golang containerfiles/Containerfile.claude golang
-
-.PHONY: build-claude-python
-build-claude-python:  ## Build Claude Code + Python3 + Git image
-	@bash scripts/build.sh claude-code-python containerfiles/Containerfile.claude python
-
-.PHONY: build-claude
-build-claude: build-claude-golang build-claude-python  ## Build both Claude Code images (golang + python)
-
-.PHONY: build-gemini
-build-gemini: build-gemini-golang build-gemini-python  ## Build both Gemini CLI images (golang + python)
-
-.PHONY: build-all
-build-all: build-claude build-gemini  ## Build all four images
+.PHONY: publish-gemini
+publish-gemini:  ## Build and push both Gemini CLI images (golang + python)
+	@bash scripts/publish.sh gemini
 
 # --------------------------------------------------------------------------
-# Push  (reads registry/image_tag from .push-defaults — no prompts)
+# Exec prompt  (interactive: select AI, language, and enter a prompt)
 # --------------------------------------------------------------------------
-.PHONY: push-gemini-golang
-push-gemini-golang:  ## Push gemini-cli-golang (uses .push-defaults)
-	@bash scripts/push.sh gemini-cli-golang
-
-.PHONY: push-gemini-python
-push-gemini-python:  ## Push gemini-cli-python (uses .push-defaults)
-	@bash scripts/push.sh gemini-cli-python
-
-.PHONY: push-claude-golang
-push-claude-golang:  ## Push claude-code-golang (uses .push-defaults)
-	@bash scripts/push.sh claude-code-golang
-
-.PHONY: push-claude-python
-push-claude-python:  ## Push claude-code-python (uses .push-defaults)
-	@bash scripts/push.sh claude-code-python
-
-.PHONY: push-claude
-push-claude: push-claude-golang push-claude-python  ## Build and push both Claude Code images
-
-.PHONY: push-gemini
-push-gemini: push-gemini-golang push-gemini-python  ## Build and push both Gemini CLI images
-
-.PHONY: podman-push
-podman-push: push-claude push-gemini  ## Build and push all four images (also tags :latest)
+.PHONY: exec-prompt
+exec-prompt:  ## Launch a one-shot AI agent pod (select AI + language interactively, or: AI=claude LANG=golang PROMPT="...")
+	@bash scripts/exec_prompt.sh "$(AI)" "$(LANG)" "$(PROMPT)"
 
 # --------------------------------------------------------------------------
 # Secrets  (generates gitignored k8s/secrets/*.yaml — no kubectl required)
 # --------------------------------------------------------------------------
+.PHONY: setup-github
+setup-github:  ## Generate ephemeral SSH key, store as secret, register as GitHub deploy key.  Requires: REPO=owner/repo  Optional: READ_ONLY=false
+	@if [ -z "$(REPO)" ]; then echo "Error: REPO=owner/repo is required" >&2; exit 1; fi
+	@bash scripts/setup-github.sh "$(REPO)" "$(or $(READ_ONLY),false)"
+
+# --------------------------------------------------------------------------
+# Cleanup  (remove completed/failed agent pods and containers)
+# --------------------------------------------------------------------------
+.PHONY: clean-agents-k8s
+clean-agents-k8s:  ## Delete completed and failed agent pods in K8s
+	kubectl delete pods -l agent-container=true \
+	    --field-selector='status.phase!=Running' \
+	    $(if $(NAMESPACE),-n $(NAMESPACE),)
+
+.PHONY: clean-agents-podman
+clean-agents-podman:  ## Remove stopped agent containers in podman
+	podman rm --filter label=agent-container=true
+
 .PHONY: create-gemini-secret
 create-gemini-secret:  ## Generate Gemini secret YAML.  Requires: GEMINI_API_KEY=<key>
 	@bash scripts/create-secrets.sh gemini "$(GEMINI_API_KEY)"
@@ -72,42 +52,42 @@ create-claude-vertex-secret:  ## Generate Claude Vertex secret YAML.  Requires: 
 	@bash scripts/create-secrets.sh claude "$(PROJECT_ID)" "$(REGION)" "$(CREDS_FILE)"
 
 # --------------------------------------------------------------------------
-# K8s deploy  (prompts for imagePullSecret + namespace, substitutes image refs)
+# K8s deploy  (publish + deploy in one command; prompts once for all details)
 # --------------------------------------------------------------------------
+.PHONY: deploy-k8s-claude-golang
+deploy-k8s-claude-golang: publish-claude  ## Publish and deploy Claude Code golang to K8s
+	@bash scripts/deploy.sh k8s/claude-golang.yaml k8s/secrets/claude-vertex-secret.yaml k8s/secrets/github-secret.yaml
+
+.PHONY: deploy-k8s-claude-python
+deploy-k8s-claude-python: publish-claude  ## Publish and deploy Claude Code python to K8s
+	@bash scripts/deploy.sh k8s/claude-python.yaml k8s/secrets/claude-vertex-secret.yaml k8s/secrets/github-secret.yaml
+
 .PHONY: deploy-k8s-gemini-golang
-deploy-k8s-gemini-golang:  ## Deploy gemini-golang to K8s
+deploy-k8s-gemini-golang: publish-gemini  ## Publish and deploy Gemini CLI golang to K8s
 	@bash scripts/deploy.sh k8s/gemini-golang.yaml k8s/secrets/gemini-secret.yaml
 
 .PHONY: deploy-k8s-gemini-python
-deploy-k8s-gemini-python:  ## Deploy gemini-python to K8s
+deploy-k8s-gemini-python: publish-gemini  ## Publish and deploy Gemini CLI python to K8s
 	@bash scripts/deploy.sh k8s/gemini-python.yaml k8s/secrets/gemini-secret.yaml
 
-.PHONY: deploy-k8s-claude-golang
-deploy-k8s-claude-golang:  ## Deploy claude-golang to K8s
-	@bash scripts/deploy.sh k8s/claude-golang.yaml k8s/secrets/claude-vertex-secret.yaml
-
-.PHONY: deploy-k8s-claude-python
-deploy-k8s-claude-python:  ## Deploy claude-python to K8s
-	@bash scripts/deploy.sh k8s/claude-python.yaml k8s/secrets/claude-vertex-secret.yaml
-
 # --------------------------------------------------------------------------
-# Podman deploy  (native podman run — reads secrets from podman secret store)
+# Podman deploy  (publish + run in one command)
 # --------------------------------------------------------------------------
-.PHONY: deploy-podman-gemini-golang
-deploy-podman-gemini-golang:  ## Run gemini-golang container with podman (run create-gemini-secret first)
-	@bash scripts/podman-run.sh gemini-golang
-
-.PHONY: deploy-podman-gemini-python
-deploy-podman-gemini-python:  ## Run gemini-python container with podman (run create-gemini-secret first)
-	@bash scripts/podman-run.sh gemini-python
-
 .PHONY: deploy-podman-claude-golang
-deploy-podman-claude-golang:  ## Run claude-golang container with podman (run create-claude-vertex-secret first)
+deploy-podman-claude-golang: publish-claude  ## Publish and run Claude Code golang with podman
 	@bash scripts/podman-run.sh claude-golang
 
 .PHONY: deploy-podman-claude-python
-deploy-podman-claude-python:  ## Run claude-python container with podman (run create-claude-vertex-secret first)
+deploy-podman-claude-python: publish-claude  ## Publish and run Claude Code python with podman
 	@bash scripts/podman-run.sh claude-python
+
+.PHONY: deploy-podman-gemini-golang
+deploy-podman-gemini-golang: publish-gemini  ## Publish and run Gemini CLI golang with podman
+	@bash scripts/podman-run.sh gemini-golang
+
+.PHONY: deploy-podman-gemini-python
+deploy-podman-gemini-python: publish-gemini  ## Publish and run Gemini CLI python with podman
+	@bash scripts/podman-run.sh gemini-python
 
 # --------------------------------------------------------------------------
 # Help

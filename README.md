@@ -235,6 +235,48 @@ make build-gemini-golang
 make deploy-podman-gemini-golang
 ```
 
+## GitHub Access
+
+Agents authenticate to GitHub via an **SSH deploy key** scoped to a single repository. Setup requires a one-time GitHub Personal Access Token (PAT) to register the key — the PAT is not stored anywhere.
+
+### Setting up GitHub access for a repo
+
+```bash
+export GITHUB_PERSONAL_ACCESS_TOKEN=<your-pat>
+make setup-github REPO=owner/repo
+```
+
+This generates an ephemeral RSA key pair, stores the private key as a secret, registers the public key as a deploy key on the repo, then wipes the key files. The PAT is used only for this step.
+
+### Required PAT permissions
+
+Generate a PAT at [github.com/settings/tokens](https://github.com/settings/tokens).
+
+| PAT type | Required permission |
+|----------|-------------------|
+| **Fine-grained** (recommended) | `Administration` → Read and write (on the target repo) |
+| **Classic** | `repo` scope (or `public_repo` for public repos only) |
+
+The PAT does not need any other scopes. It is read from `GITHUB_PERSONAL_ACCESS_TOKEN` in your environment, with `GITHUB_TOKEN` as a fallback.
+
+### Granting write access
+
+By default, deploy keys are registered with write access (`read_only=false`). To register as read-only:
+
+```bash
+make setup-github REPO=owner/repo READ_ONLY=true
+```
+
+### Cleanup
+
+```bash
+# Remove completed/failed agent pods from K8s
+make clean-agents-k8s
+
+# Remove stopped agent containers from Podman
+make clean-agents-podman
+```
+
 ## Security Notes
 
 - **Secrets are gitignored**: Never commit `k8s/secrets/*.yaml` (non-template files)

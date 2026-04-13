@@ -8,7 +8,11 @@
       "Bash(curl -fsSL https://claude.ai/install.sh)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(chmod:*)",
-      "Bash(make help:*)"
+      "Bash(make help:*)",
+      "Bash(podman images:*)",
+      "Bash(bash scripts/build.sh claude-code-python containerfiles/Containerfile.claude python)",
+      "Bash(bash scripts/build.sh gemini-cli-golang containerfiles/Containerfile.gemini golang)",
+      "Bash(curl -s https://api.github.com/repos/github/github-mcp-server/releases/latest)"
     ]
   }
 }
