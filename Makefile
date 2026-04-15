@@ -5,7 +5,7 @@
 -include .push-defaults
 
 # --------------------------------------------------------------------------
-# Publish  (build + push; prompts once for registry/image_tag, saves to .push-defaults)
+# Build  (prompts once for registry/image_tag, saves to .push-defaults)
 # --------------------------------------------------------------------------
 .PHONY: build-opencode-golang
 build-opencode-golang:  ## Build OpenCode + Golang + Git image
@@ -30,7 +30,7 @@ build-fast-opencode-python:  ## Build opencode-python (no prompts, uses .push-de
 	podman build -f containerfiles/Containerfile.opencode --build-arg LANG=python --target final -t $(REGISTRY)/opencode-python:$(IMAGE_TAG) .
 
 # --------------------------------------------------------------------------
-# Exec prompt  (interactive: select AI, language, and enter a prompt)
+# Push
 # --------------------------------------------------------------------------
 .PHONY: push-opencode-golang
 push-opencode-golang:  ## Push opencode-golang (uses .push-defaults)
@@ -64,18 +64,53 @@ create-opencode-secret:  ## Create Podman + K8s secrets from k8s/secrets/opencod
 	@bash scripts/create-secrets.sh "$(CREDS_FILE)"
 
 # --------------------------------------------------------------------------
-# K8s deploy  (publish + deploy in one command; prompts once for all details)
+# K8s deploy — Job  (one-shot prompt execution)
+#   Optional env: OPENCODE_MODEL, OPENCODE_PROMPT
 # --------------------------------------------------------------------------
-.PHONY: deploy-k8s-opencode-golang
-deploy-k8s-opencode-golang:  ## Deploy opencode-golang to K8s
-	@bash scripts/deploy.sh k8s/opencode-golang.yaml k8s/secrets/opencode-secret.yaml.k8s
+.PHONY: deploy-k8s-job-opencode-golang
+deploy-k8s-job-opencode-golang:  ## Deploy opencode-golang Job to K8s (one-shot prompt)
+	@bash scripts/deploy.sh k8s/job-opencode-golang.yaml k8s/secrets/opencode-secret.yaml.k8s
 
-.PHONY: deploy-k8s-opencode-python
-deploy-k8s-opencode-python:  ## Deploy opencode-python to K8s
-	@bash scripts/deploy.sh k8s/opencode-python.yaml k8s/secrets/opencode-secret.yaml.k8s
+.PHONY: deploy-k8s-job-opencode-python
+deploy-k8s-job-opencode-python:  ## Deploy opencode-python Job to K8s (one-shot prompt)
+	@bash scripts/deploy.sh k8s/job-opencode-python.yaml k8s/secrets/opencode-secret.yaml.k8s
 
 # --------------------------------------------------------------------------
-# Podman deploy  (publish + run in one command)
+# K8s deploy — CronJob  (scheduled periodic runs)
+#   Optional env: OPENCODE_MODEL, OPENCODE_PROMPT, CRONJOB_SCHEDULE
+# --------------------------------------------------------------------------
+.PHONY: deploy-k8s-cronjob-opencode-golang
+deploy-k8s-cronjob-opencode-golang:  ## Deploy opencode-golang CronJob to K8s (scheduled prompt)
+	@bash scripts/deploy.sh k8s/cronjob-opencode-golang.yaml k8s/secrets/opencode-secret.yaml.k8s
+
+.PHONY: deploy-k8s-cronjob-opencode-python
+deploy-k8s-cronjob-opencode-python:  ## Deploy opencode-python CronJob to K8s (scheduled prompt)
+	@bash scripts/deploy.sh k8s/cronjob-opencode-python.yaml k8s/secrets/opencode-secret.yaml.k8s
+
+# --------------------------------------------------------------------------
+# K8s deploy — Serve  (persistent opencode server, Deployment + Service)
+# --------------------------------------------------------------------------
+.PHONY: deploy-k8s-serve-opencode-golang
+deploy-k8s-serve-opencode-golang:  ## Deploy opencode-golang server to K8s (Deployment + Service)
+	@bash scripts/deploy.sh k8s/serve-opencode-golang.yaml k8s/secrets/opencode-secret.yaml.k8s
+
+.PHONY: deploy-k8s-serve-opencode-python
+deploy-k8s-serve-opencode-python:  ## Deploy opencode-python server to K8s (Deployment + Service)
+	@bash scripts/deploy.sh k8s/serve-opencode-python.yaml k8s/secrets/opencode-secret.yaml.k8s
+
+# --------------------------------------------------------------------------
+# K8s deploy — TUI  (interactive pod, attach via kubectl exec)
+# --------------------------------------------------------------------------
+.PHONY: deploy-k8s-tui-opencode-golang
+deploy-k8s-tui-opencode-golang:  ## Deploy opencode-golang TUI pod to K8s (interactive)
+	@bash scripts/deploy.sh k8s/tui-opencode-golang.yaml k8s/secrets/opencode-secret.yaml.k8s
+
+.PHONY: deploy-k8s-tui-opencode-python
+deploy-k8s-tui-opencode-python:  ## Deploy opencode-python TUI pod to K8s (interactive)
+	@bash scripts/deploy.sh k8s/tui-opencode-python.yaml k8s/secrets/opencode-secret.yaml.k8s
+
+# --------------------------------------------------------------------------
+# Podman deploy  (local container runs)
 # --------------------------------------------------------------------------
 .PHONY: deploy-podman-opencode-golang
 deploy-podman-opencode-golang:  ## Run opencode-golang container with podman (interactive TUI)
@@ -123,21 +158,13 @@ connect-opencode-golang:  ## Port-forward opencode-golang pod to localhost:4096
 connect-opencode-python:  ## Port-forward opencode-python pod to localhost:4096
 	@bash scripts/connect.sh opencode-python
 
-.PHONY: deploy-podman-gemini-golang
-deploy-podman-gemini-golang: publish-gemini  ## Publish and run Gemini CLI golang with podman
-	@bash scripts/podman-run.sh gemini-golang
-
-.PHONY: deploy-podman-gemini-python
-deploy-podman-gemini-python: publish-gemini  ## Publish and run Gemini CLI python with podman
-	@bash scripts/podman-run.sh gemini-python
-
 # --------------------------------------------------------------------------
 # Help
 # --------------------------------------------------------------------------
 .PHONY: help
 help:  ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' Makefile \
-	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-36s\033[0m %s\n", $$1, $$2}' \
+	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-44s\033[0m %s\n", $$1, $$2}' \
 	  | sort
 
 .DEFAULT_GOAL := help

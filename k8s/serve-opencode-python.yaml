@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencode-python
+  labels:
+    app: opencode-python
+    tool: opencode
+    lang: python
+    mode: serve
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: opencode-python
+      mode: serve
+  template:
+    metadata:
+      labels:
+        app: opencode-python
+        tool: opencode
+        lang: python
+        mode: serve
+    spec:
+      IMAGE_PULL_SECRET_BLOCK
+      containers:
+        - name: opencode-python
+          image: REGISTRY/opencode-python:IMAGE_TAG
+          imagePullPolicy: IfNotPresent
+          args: ["opencode", "serve", "--hostname", "0.0.0.0"]
+          ports:
+            - containerPort: 4096
+              name: opencode
+          env:
+            # Claude via Vertex AI (optional — only needed for Vertex models)
+            - name: GOOGLE_CLOUD_PROJECT
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-secret
+                  key: GOOGLE_CLOUD_PROJECT
+                  optional: true
+            - name: VERTEX_LOCATION
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-secret
+                  key: VERTEX_LOCATION
+                  optional: true
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /app/gcloud/credentials.json
+            # Gemini via Google API key (optional — only needed for Gemini models)
+            - name: GOOGLE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-secret
+                  key: GOOGLE_API_KEY
+                  optional: true
+            # GitHub PAT for git HTTPS auth (optional)
+            - name: GITHUB_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-secret
+                  key: GITHUB_PAT
+                  optional: true
+          volumeMounts:
+            - name: gcloud-creds
+              mountPath: /app/gcloud
+              readOnly: true
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+      volumes:
+        - name: gcloud-creds
+          secret:
+            secretName: opencode-secret
+            optional: true
+            items:
+              - key: application_default_credentials.json
+                path: credentials.json
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opencode-python
+  labels:
+    app: opencode-python
+    tool: opencode
+    lang: python
+    mode: serve
+spec:
+  selector:
+    app: opencode-python
+    mode: serve
+  ports:
+    - port: 4096
+      targetPort: 4096
+      name: opencode
+  type: ClusterIP

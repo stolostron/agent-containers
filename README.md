@@ -2,244 +2,299 @@
 
 Build and deploy containerized AI code agents with language-specific tooling.
 
-This repository builds container images for **OpenCode** — an AI coding agent that supports both **Claude** (via Vertex AI or direct API) and **Gemini** as selectable providers. Images are available with **Go** or **Python 3** support and can be deployed locally with Podman or to Kubernetes.
+This repository builds container images for [OpenCode](https://opencode.ai) — an AI coding agent that supports **Claude** (via Vertex AI) and **Gemini** as selectable providers. Images are available with **Go** or **Python 3** toolchains and can be deployed locally with Podman or to Kubernetes.
 
 ## Available Images
 
-- `opencode-golang` - OpenCode with Go 1.x
-- `opencode-python` - OpenCode with Python 3
+- `opencode-golang` — OpenCode with Go
+- `opencode-python` — OpenCode with Python 3
 
 Each image includes:
-- Git and essential development tools
-- Node.js 20 (slim base)
-- OpenCode CLI pre-installed (`opencode-ai`)
+- Node.js 20 (slim base) with OpenCode CLI (`opencode-ai`) pre-installed
+- Language runtime (Go or Python 3 + pip/venv)
+- Git and development tools (fzf, ripgrep, jq, vim, nano, zsh, less)
 - Provider config restricting to Claude and Gemini models only
-- Language runtime (Go or Python)
-- Development utilities (fzf, ripgrep, jq, vim, nano, zsh, less)
 
 ## Prerequisites
 
-- **Podman** or **Docker** (for building)
-- **Make** (for running build/deploy targets)
-- **Git**
-- **kubectl** (for Kubernetes deployments only)
-- API credentials:
-  - **Claude via Vertex AI**: GCP project ID, region, and ADC credentials (`gcloud auth application-default login`)
+- **Docker** or **Podman** (for building images)
+- **Make**
+- **kubectl** + **kind** (for Kubernetes deployments)
+- API credentials (at least one):
   - **Gemini**: API key from [Google AI Studio](https://aistudio.google.com/apikey)
+  - **Claude via Vertex AI**: GCP project, region, and ADC credentials
 
-## Quick Start
+## Kubernetes Deployment Modes
 
-### 1. Build an Image
+Each mode uses the right K8s resource for the job:
+
+| Mode | K8s Resource | Command | Use Case |
+|------|-------------|---------|----------|
+| **Job** | `batch/v1 Job` | `opencode run -m MODEL PROMPT` | One-shot prompt execution |
+| **CronJob** | `batch/v1 CronJob` | `opencode run -m MODEL PROMPT` | Scheduled/periodic prompts |
+| **Serve** | `apps/v1 Deployment` + `Service` | `opencode serve` | Persistent server on port 4096 |
+| **TUI** | `v1 Pod` | `sleep infinity` + `kubectl exec` | Interactive terminal session |
+
+## Quick Start (Kind Cluster)
+
+### 1. Build the image
 
 ```bash
+# With Docker
+docker build -f containerfiles/Containerfile.opencode \
+  --build-arg LANG=golang --target final \
+  -t opencode-golang:latest .
+
+# Or with Podman
 make build-opencode-golang
 ```
 
-The build script will prompt for:
-- **Registry**: Container registry (e.g., `docker.io`, `ghcr.io`, `zot.paxlab.cc`)
-- **Image Tag**: Version tag (default: `latest`)
-
-These defaults are saved to `.push-defaults` (gitignored) for future builds.
-
-### 2. Create Secrets
+### 2. Create a Kind cluster and load the image
 
 ```bash
-make create-opencode-secret \
-  PROJECT_ID=your-gcp-project-id \
-  REGION=us-east5 \
-  GOOGLE_API_KEY=your-gemini-api-key
+kind create cluster --name opencode
+kind load docker-image opencode-golang:latest --name opencode
 ```
 
-Get GCP credentials with:
+### 3. Create secrets
+
+Copy the template and fill in your credentials:
+
 ```bash
-gcloud auth application-default login
+cp k8s/secrets/opencode-secret.yaml.template k8s/secrets/opencode-secret.yaml
 ```
 
-`CREDS_FILE` defaults to `~/.config/gcloud/application_default_credentials.json`.
+Edit `k8s/secrets/opencode-secret.yaml` with your values:
 
-### 3. Deploy
-
-**Locally with Podman:**
-```bash
-make deploy-podman-opencode-golang
+```yaml
+stringData:
+  GOOGLE_CLOUD_PROJECT: "your-gcp-project-id"
+  VERTEX_LOCATION: "us-east5"
+  GOOGLE_API_KEY: "your-gemini-api-key"
+  GITHUB_PAT: ""  # optional
 ```
 
-**To Kubernetes:**
+Then generate the K8s secret:
+
 ```bash
-make deploy-k8s-opencode-golang
+make create-opencode-secret
 ```
 
-The deploy script will prompt for:
-- **Image Pull Secret** (name of existing K8s secret)
-- **Namespace** (K8s namespace to deploy to)
-
-## Connecting to OpenCode
-
-### Podman — Interactive TUI
-
-Starts OpenCode directly in your terminal:
+Or create the secret directly with kubectl:
 
 ```bash
-make deploy-podman-opencode-golang
+kubectl create secret generic opencode-secret \
+  --from-literal=GOOGLE_CLOUD_PROJECT=your-project \
+  --from-literal=VERTEX_LOCATION=us-east5 \
+  --from-literal=GOOGLE_API_KEY=your-gemini-key \
+  --from-literal=application_default_credentials.json='{}' \
+  --context kind-opencode
 ```
 
-### Podman — Server Mode
+### 4. Deploy
 
-Starts OpenCode as a background server on `localhost:4096`:
+Pick a mode and render the manifest with `sed`, then apply:
 
+**Job (one-shot prompt):**
 ```bash
-make serve-podman-opencode-golang
+sed -e 's|REGISTRY|opencode-golang|g' \
+    -e 's|/opencode-golang||g' \
+    -e 's|IMAGE_TAG|latest|g' \
+    -e 's|OPENCODE_MODEL_VALUE|google/gemini-2.5-pro|g' \
+    -e 's|OPENCODE_PROMPT_VALUE|explain what kubernetes is in one sentence|g' \
+    -e '/IMAGE_PULL_SECRET_BLOCK/d' \
+    k8s/job-opencode-golang.yaml | kubectl apply -f -
 ```
 
-Then connect from your local machine:
+**Serve (persistent server):**
+```bash
+sed -e 's|REGISTRY|opencode-golang|g' \
+    -e 's|/opencode-golang||g' \
+    -e 's|IMAGE_TAG|latest|g' \
+    -e '/IMAGE_PULL_SECRET_BLOCK/d' \
+    k8s/serve-opencode-golang.yaml | kubectl apply -f -
+```
+
+**TUI (interactive pod):**
+```bash
+sed -e 's|REGISTRY|opencode-golang|g' \
+    -e 's|/opencode-golang||g' \
+    -e 's|IMAGE_TAG|latest|g' \
+    -e '/IMAGE_PULL_SECRET_BLOCK/d' \
+    k8s/tui-opencode-golang.yaml | kubectl apply -f -
+```
+
+### 5. Check status and connect
 
 ```bash
-opencode          # TUI connected to the server
+# See all resources
+kubectl get jobs,deployments,services,pods
+
+# Job — check logs
+kubectl logs -l app=opencode-golang
+
+# Serve — port-forward and attach
+kubectl port-forward svc/opencode-golang 4096:4096
+# then: opencode attach http://localhost:4096
 # or open http://localhost:4096 in a browser
+
+# TUI — exec into the pod
+kubectl exec -it opencode-golang-tui -- opencode
 ```
 
-Stop the server with:
+## Getting API Credentials
+
+### Gemini API Key (simplest)
+
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
+2. Click **Create API Key**
+3. Copy the key — use it as `GOOGLE_API_KEY`
+
+### Claude via Vertex AI
+
+1. Create or select a GCP project at [console.cloud.google.com](https://console.cloud.google.com)
+2. Enable the **Vertex AI API** in your project
+3. Request access to Claude models through the [Model Garden](https://console.cloud.google.com/vertex-ai/model-garden)
+4. Authenticate locally:
+   ```bash
+   gcloud auth application-default login
+   ```
+5. Note your project ID and region (e.g. `us-east5`) — use as `GOOGLE_CLOUD_PROJECT` and `VERTEX_LOCATION`
+6. The ADC credentials file at `~/.config/gcloud/application_default_credentials.json` is used by `create-secrets.sh`
+
+### GitHub PAT (optional)
+
+For private repo access inside agent containers:
+
+1. Go to [github.com/settings/tokens](https://github.com/settings/tokens)
+2. Create a fine-grained token with **Contents: Read** on the repos you need
+3. Use it as `GITHUB_PAT` in the secret
+
+## Makefile Targets
+
+### Build
+
 ```bash
-podman stop opencode-golang
+make build-opencode-golang       # Build OpenCode + Go image (prompts for registry/tag)
+make build-opencode-python       # Build OpenCode + Python image
+make build-all                   # Build both
+make build-fast-opencode-golang  # Build without prompts (uses saved .push-defaults)
 ```
 
-### Kubernetes — Port-Forward
-
-After deploying to K8s, forward the pod's port to your local machine:
+### Push
 
 ```bash
+make push-opencode-golang        # Push golang image to registry
+make push-opencode-python        # Push python image to registry
+make podman-push                 # Push both (also tags :latest)
+```
+
+### Kubernetes Deploy
+
+```bash
+# Job (one-shot prompt)
+make deploy-k8s-job-opencode-golang
+make deploy-k8s-job-opencode-python
+
+# CronJob (scheduled prompt)
+make deploy-k8s-cronjob-opencode-golang
+make deploy-k8s-cronjob-opencode-python
+
+# Serve (Deployment + Service)
+make deploy-k8s-serve-opencode-golang
+make deploy-k8s-serve-opencode-python
+
+# TUI (interactive Pod)
+make deploy-k8s-tui-opencode-golang
+make deploy-k8s-tui-opencode-python
+
+# Port-forward to a running pod
 make connect-opencode-golang
 ```
 
-Then connect at `localhost:4096` the same way as above. Press `Ctrl+C` to stop forwarding.
-
----
-
-## Usage
-
-### Build Targets
+Job and CronJob targets accept optional environment variables:
 
 ```bash
-make build-opencode-golang    # OpenCode + Go
-make build-opencode-python    # OpenCode + Python
-make build-all                # Both images
+OPENCODE_MODEL="google/gemini-2.5-flash" \
+OPENCODE_PROMPT="refactor this function" \
+  make deploy-k8s-job-opencode-golang
+
+CRONJOB_SCHEDULE="0 */6 * * *" \
+OPENCODE_PROMPT="run daily checks" \
+  make deploy-k8s-cronjob-opencode-golang
 ```
 
-### Push Targets
-
-Push images to registry (reads defaults from `.push-defaults`):
+### Podman (local)
 
 ```bash
-make push-opencode-golang     # Push golang image
-make push-opencode-python     # Push python image
-make podman-push              # Push both images (also tags :latest)
+make deploy-podman-opencode-golang   # Interactive TUI
+make serve-podman-opencode-golang    # Background server on localhost:4096
+make attach-podman-opencode-golang   # Attach TUI to running server
+make resume-podman-opencode-golang   # Resume last session
 ```
 
-### Secret Management
+### Secrets
 
 ```bash
-make create-opencode-secret \
-  PROJECT_ID=my-project \
-  REGION=us-east5 \
-  GOOGLE_API_KEY=xyz
+make create-opencode-secret          # Generate K8s + Podman secrets
+make create-opencode-secret CREDS_FILE=/path/to/adc.json
 ```
 
-Secrets are stored as gitignored YAML files in `k8s/secrets/`.
-
-### Deployment
-
-**Podman (local container runtime):**
-```bash
-make deploy-podman-opencode-golang
-make deploy-podman-opencode-python
-```
-
-**Kubernetes:**
-```bash
-make deploy-k8s-opencode-golang
-make deploy-k8s-opencode-python
-```
-
-### View Help
+### Help
 
 ```bash
-make help
-```
-
-## Selecting a Provider at Runtime
-
-OpenCode is configured to show only Claude and Gemini models. Select a provider when running a prompt:
-
-```bash
-# Claude via Vertex AI (interactive TUI — select model in UI)
-opencode
-
-# Non-interactive with a specific model
-opencode run --model google-vertex-anthropic/claude-sonnet-4-20250514 "explain this code"
-opencode run --model google/gemini-2.5-pro "refactor this function"
-
-# List available models
-opencode models
-```
-
-### Session Management
-
-**Interactive** (inside the container TUI):
-- `Ctrl+A` — open session picker to browse and resume previous sessions
-- `/sessions` slash command — same as above
-
-**CLI**:
-```bash
-opencode session list                     # list all sessions (ID, title, timestamp)
-opencode session list --format json       # JSON output for scripting
-opencode -c                               # resume last session
-opencode -s <session-id>                  # resume a specific session
-opencode run -c "follow-up prompt"        # non-interactive continuation of last session
+make help                            # Show all targets
 ```
 
 ## Directory Structure
 
-```
+```text
 .
-├── Makefile                           # Build, push, deploy targets
-├── .push-defaults                     # Session defaults (gitignored)
-├── README.md                          # This file
-├── plans/                             # Implementation plan documents
+├── Makefile                              # Build, push, deploy targets
+├── README.md
+├── CLAUDE.md                             # AI assistant guidelines
+├── .push-defaults                        # Saved registry/tag/namespace (gitignored)
 ├── containerfiles/
-│   ├── Containerfile.opencode         # OpenCode image definition (shared base + lang layers)
-│   └── opencode.json                  # Provider allowlist (Claude + Gemini only)
+│   ├── Containerfile.opencode            # Multi-stage image definition
+│   ├── entrypoint.sh                     # Runtime credential setup
+│   └── opencode.json                     # Provider allowlist
 ├── k8s/
-│   ├── opencode-golang.yaml           # OpenCode + Go Pod template
-│   ├── opencode-python.yaml           # OpenCode + Python Pod template
+│   ├── job-opencode-golang.yaml          # Job — one-shot prompt
+│   ├── job-opencode-python.yaml
+│   ├── cronjob-opencode-golang.yaml      # CronJob — scheduled prompt
+│   ├── cronjob-opencode-python.yaml
+│   ├── serve-opencode-golang.yaml        # Deployment + Service — persistent server
+│   ├── serve-opencode-python.yaml
+│   ├── tui-opencode-golang.yaml          # Pod — interactive TUI
+│   ├── tui-opencode-python.yaml
 │   └── secrets/
-│       ├── opencode-secret.yaml.template   # Template (committed)
-│       └── opencode-secret.yaml            # Generated (gitignored)
-└── scripts/
-    ├── build.sh                       # Build image with registry/tag prompts
-    ├── push.sh                        # Push image to registry
-    ├── deploy.sh                      # Deploy to Kubernetes
-    ├── podman-run.sh                  # Run container locally
-    └── create-secrets.sh              # Generate secret YAML
+│       ├── opencode-secret.yaml.template # Template (committed)
+│       └── opencode-secret.yaml          # Your values (gitignored)
+├── scripts/
+│   ├── build.sh                          # Build with registry/tag prompts
+│   ├── push.sh                           # Push to registry
+│   ├── deploy.sh                         # Render + deploy to K8s
+│   ├── connect.sh                        # Port-forward to pod
+│   ├── podman-run.sh                     # Run locally with Podman
+│   └── create-secrets.sh                 # Generate secret files
+└── plans/                                # Design documents
 ```
 
 ## Configuration
 
 ### .push-defaults
 
-Session defaults saved after each build (gitignored):
+Saved after each build (gitignored):
 
+```dotenv
+REGISTRY=docker.io/myuser
+IMAGE_TAG=0.3
+NAMESPACE=opencode
 ```
-REGISTRY=zot.paxlab.cc
-IMAGE_TAG=0.2
-IMAGE_PULL_SECRET=zot-pull-secret
-NAMESPACE=agent-coordinator
-```
 
-Edit or delete to reset defaults.
+### Provider Config
 
-### Provider Config (opencode.json)
-
-Baked into the image at `/workspace/opencode.json`. Restricts available providers to:
+Baked into the image at `/workspace/opencode.json`:
 
 ```json
 {
@@ -247,24 +302,12 @@ Baked into the image at `/workspace/opencode.json`. Restricts available provider
 }
 ```
 
-- `google-vertex-anthropic` — Claude via Google Vertex AI (GCP credentials)
-- `google` — Gemini via Google API key
-
-### Container Environment
-
-The image sets:
-- `GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud/credentials.json` (path for Vertex AI creds)
-- `DEVCONTAINER=true`
-- `EDITOR=nano`
-
-At runtime, the following env vars are injected from the secret:
-- `GOOGLE_CLOUD_PROJECT` — GCP project ID (Vertex AI)
-- `VERTEX_LOCATION` — GCP region (Vertex AI)
-- `GOOGLE_API_KEY` — Gemini API key
+- `google-vertex-anthropic` — Claude via Vertex AI (requires GCP ADC + project)
+- `google` — Gemini via API key
 
 ### Resource Limits
 
-Default Kubernetes resource requests/limits:
+All manifests use:
 
 ```yaml
 requests:
@@ -275,128 +318,57 @@ limits:
   cpu: "2000m"
 ```
 
-Edit K8s YAML files to customize.
+Edit the YAML files under `k8s/` to customize.
 
-## Workflow Example
-
-### Building and Deploying to K8s
+## Selecting a Provider at Runtime
 
 ```bash
-# 1. Build all images
-make build-all
+# Inside the container — interactive model picker
+opencode
 
-# 2. Create secret (one-time setup)
-make create-opencode-secret \
-  PROJECT_ID=my-project \
-  REGION=us-east5 \
-  GOOGLE_API_KEY=your-gemini-api-key
+# Non-interactive
+opencode run --model google/gemini-2.5-pro "explain this code"
+opencode run --model google-vertex-anthropic/claude-sonnet-4-20250514 "review this PR"
 
-# 3. Push all to registry
-make podman-push
-
-# 4. Deploy to K8s
-make deploy-k8s-opencode-golang
-```
-
-### Running Locally
-
-```bash
-# 1. Create secret
-make create-opencode-secret PROJECT_ID=my-project REGION=us-east5
-
-# 2. Build image
-make build-opencode-golang
-
-# 3. Run container
-make deploy-podman-opencode-golang
-```
-
-## GitHub Access
-
-Agents authenticate to GitHub via an **SSH deploy key** scoped to a single repository. Setup requires a one-time GitHub Personal Access Token (PAT) to register the key — the PAT is not stored anywhere.
-
-### Setting up GitHub access for a repo
-
-```bash
-export GITHUB_PERSONAL_ACCESS_TOKEN=<your-pat>
-make setup-github REPO=owner/repo
-```
-
-This generates an ephemeral RSA key pair, stores the private key as a secret, registers the public key as a deploy key on the repo, then wipes the key files. The PAT is used only for this step.
-
-### Required PAT permissions
-
-Generate a PAT at [github.com/settings/tokens](https://github.com/settings/tokens).
-
-| PAT type | Required permission |
-|----------|-------------------|
-| **Fine-grained** (recommended) | `Administration` → Read and write (on the target repo) |
-| **Classic** | `repo` scope (or `public_repo` for public repos only) |
-
-The PAT does not need any other scopes. It is read from `GITHUB_PERSONAL_ACCESS_TOKEN` in your environment, with `GITHUB_TOKEN` as a fallback.
-
-### Granting write access
-
-By default, deploy keys are registered with write access (`read_only=false`). To register as read-only:
-
-```bash
-make setup-github REPO=owner/repo READ_ONLY=true
-```
-
-### Cleanup
-
-```bash
-# Remove completed/failed agent pods from K8s
-make clean-agents-k8s
-
-# Remove stopped agent containers from Podman
-make clean-agents-podman
+# List available models
+opencode models
 ```
 
 ## Security Notes
 
-- **Secrets are gitignored**: Never commit `k8s/secrets/*.yaml` (non-template files)
-- **Credentials at runtime**: Mounted via K8s secrets or Podman secret store
-- **Non-root user**: Images run as `node` user (non-root for security)
-- **Template files**: `.yaml.template` files are committed; generated `.yaml` files are not
+- Secrets are gitignored — never commit `k8s/secrets/*.yaml` (only the `.template` is tracked)
+- Credentials are mounted at runtime via K8s Secrets or Podman secret store
+- Images run as non-root `node` user
+- The entrypoint writes `GITHUB_PAT` to `~/.git-credentials` and `GOOGLE_API_KEY` to OpenCode's `auth.json` at startup only
 
 ## Troubleshooting
 
-**Build fails with permission denied:**
+**Job completes but no output:**
 ```bash
-podman version
+kubectl logs -l app=opencode-golang
 ```
 
-**K8s deployment fails to pull image:**
-- Verify image push succeeded: `podman images`
-- Check image pull secret exists: `kubectl get secrets -n <namespace>`
-- Verify registry URL in `.push-defaults`
+**Pod stuck in Pending:**
+```bash
+kubectl describe pod -l app=opencode-golang
+```
 
-**Container exits immediately:**
-- Check logs: `kubectl logs <pod-name> -n <namespace>`
-- For Podman: `podman logs <container-id>`
-- Verify secrets are mounted correctly
+**Auth errors (API key not valid):**
+- Verify your `GOOGLE_API_KEY` in the secret
+- Check that the Gemini API is enabled in your GCP project
+- Run `opencode models` inside the container to test connectivity
 
-**Secrets not found:**
-- Verify secret YAML was created: `ls -la k8s/secrets/*.yaml`
-- Regenerate if needed: `make create-opencode-secret PROJECT_ID=... REGION=...`
-- Ensure namespace matches in K8s deployment
+**Image not found in Kind:**
+```bash
+kind load docker-image opencode-golang:latest --name opencode
+```
 
-**No models listed / auth errors:**
-- Verify `GOOGLE_CLOUD_PROJECT` and `VERTEX_LOCATION` are set correctly
-- Check `GOOGLE_APPLICATION_CREDENTIALS` points to a valid credentials file
-- Run `opencode models` inside the container to diagnose provider connectivity
-
-## Development
-
-To modify the image definition, edit:
-
-- `containerfiles/Containerfile.opencode` — image build definition
-- `containerfiles/opencode.json` — provider allowlist
-
-Build arguments:
-- `LANG` — Language variant: `golang` or `python`
-- `--target final` — Build final stage only
+**Secret not found:**
+```bash
+kubectl get secrets
+# Recreate if missing:
+kubectl create secret generic opencode-secret --from-literal=...
+```
 
 ## License
 

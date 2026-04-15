@@ -1,0 +1,89 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: opencode-golang
+  labels:
+    app: opencode-golang
+    tool: opencode
+    lang: golang
+spec:
+  schedule: "CRONJOB_SCHEDULE"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    metadata:
+      labels:
+        app: opencode-golang
+        tool: opencode
+        lang: golang
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app: opencode-golang
+            tool: opencode
+            lang: golang
+        spec:
+          IMAGE_PULL_SECRET_BLOCK
+          containers:
+            - name: opencode-golang
+              image: REGISTRY/opencode-golang:IMAGE_TAG
+              imagePullPolicy: IfNotPresent
+              args: ["opencode", "run", "-m", "$(OPENCODE_MODEL)", "$(OPENCODE_PROMPT)"]
+              env:
+                - name: OPENCODE_MODEL
+                  value: "OPENCODE_MODEL_VALUE"
+                - name: OPENCODE_PROMPT
+                  value: "OPENCODE_PROMPT_VALUE"
+                # Claude via Vertex AI (optional — only needed for Vertex models)
+                - name: GOOGLE_CLOUD_PROJECT
+                  valueFrom:
+                    secretKeyRef:
+                      name: opencode-secret
+                      key: GOOGLE_CLOUD_PROJECT
+                      optional: true
+                - name: VERTEX_LOCATION
+                  valueFrom:
+                    secretKeyRef:
+                      name: opencode-secret
+                      key: VERTEX_LOCATION
+                      optional: true
+                - name: GOOGLE_APPLICATION_CREDENTIALS
+                  value: /app/gcloud/credentials.json
+                # Gemini via Google API key (optional — only needed for Gemini models)
+                - name: GOOGLE_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: opencode-secret
+                      key: GOOGLE_API_KEY
+                      optional: true
+                # GitHub PAT for git HTTPS auth (optional)
+                - name: GITHUB_PAT
+                  valueFrom:
+                    secretKeyRef:
+                      name: opencode-secret
+                      key: GITHUB_PAT
+                      optional: true
+              volumeMounts:
+                - name: gcloud-creds
+                  mountPath: /app/gcloud
+                  readOnly: true
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: "500m"
+                limits:
+                  memory: "2Gi"
+                  cpu: "2000m"
+          volumes:
+            - name: gcloud-creds
+              secret:
+                secretName: opencode-secret
+                optional: true
+                items:
+                  - key: application_default_credentials.json
+                    path: credentials.json
+          restartPolicy: Never

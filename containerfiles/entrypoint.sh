@@ -18,10 +18,8 @@ AUTH_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/opencode"
 mkdir -p "$AUTH_DIR"
 jq -n \
     --arg gak "${GOOGLE_API_KEY:-}" \
-    '{
-        google: (if $gak != "" then {"type": "api", "key": $gak} else empty end)
-    }
-    | with_entries(select(.value != null))' \
+    '{}
+    + if $gak != "" then {google: {"type": "api", "key": $gak}} else {} end' \
     > "${AUTH_DIR}/auth.json"
 
 exec "$@"
