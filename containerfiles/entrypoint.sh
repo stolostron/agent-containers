@@ -9,6 +9,7 @@ if [ -n "${GITHUB_PAT:-}" ]; then
     printf 'https://x-access-token:%s@github.com\n' "$GITHUB_PAT" \
         > "${HOME}/.git-credentials"
     chmod 600 "${HOME}/.git-credentials"
+    export GH_TOKEN="${GITHUB_PAT}"
 fi
 
 # Write OpenCode auth.json for API-key-based providers.

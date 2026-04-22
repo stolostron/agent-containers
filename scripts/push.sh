@@ -14,7 +14,7 @@ if [[ ! -f "$DEFAULTS_FILE" ]]; then
 fi
 
 REGISTRY=$(grep '^REGISTRY=' "$DEFAULTS_FILE" | cut -d= -f2- || true)
-IMAGE_TAG=$(grep '^IMAGE_TAG=' "$DEFAULTS_FILE" | cut -d= -f2- || true)
+IMAGE_TAG=$(grep -m1 '^IMAGE_TAG=' "$DEFAULTS_FILE" | cut -d= -f2- || true)
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 
 if [[ -z "$REGISTRY" ]]; then

@@ -1,11 +1,22 @@
 ARG LANG=golang
+ARG GH_VERSION=2.74.0
+ARG GO_VERSION=1.26.2
+ARG OPENCODE_VERSION=1.14.20
 
 # ---- Base: node + common tools + opencode ----
 FROM node:20-slim AS base-common
+ARG GH_VERSION
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git curl ca-certificates zsh fzf vim nano less jq ripgrep openssh-client \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN set -ex; \
+    ARCH=$(dpkg --print-architecture); \
+    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${ARCH}.tar.gz" \
+        | tar -xz -C /usr/local/bin --strip-components=2 "gh_${GH_VERSION}_linux_${ARCH}/bin/gh"; \
+    chmod +x /usr/local/bin/gh; \
+    gh --version
 
 # npm global prefix under /usr/local/share, owned by the non-root "node" user
 # (the "node" user already exists in the base image)
@@ -19,12 +30,12 @@ ENV PATH=$PATH:/usr/local/share/npm-global/bin
 COPY --chown=node:node scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 USER node
-RUN npm install -g opencode-ai && npm cache clean --force
+RUN npm install -g opencode-ai@${OPENCODE_VERSION} && npm cache clean --force
 WORKDIR /workspace
 
 ENV DEVCONTAINER=true
 ENV EDITOR=nano
-ENV NODE_OPTIONS=--max-old-space-size=4096
+ENV NODE_OPTIONS=--max-old-space-size=1536
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Provider config: restrict to Claude (Vertex) and Gemini only.
@@ -38,9 +49,15 @@ USER node
 
 # ---- Golang variant ----
 FROM base-common AS lang-golang
+ARG GO_VERSION
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends golang-go \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN set -ex; \
+    ARCH=$(dpkg --print-architecture); \
+    curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+        | tar -xz -C /usr/local; \
+    /usr/local/go/bin/go version
+ENV PATH=$PATH:/usr/local/go/bin
+ENV GOPATH=/home/node/go
 USER node
 
 # ---- Python variant ----

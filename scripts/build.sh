@@ -53,6 +53,8 @@ echo "Building ${FULL_IMAGE} ..."
 podman build \
   -f "${REPO_ROOT}/${CONTAINERFILE}" \
   --build-arg LANG="${LANG}" \
+  --build-arg GH_VERSION="${GH_VERSION:-2.74.0}" \
+  --build-arg GO_VERSION="${GO_VERSION:-1.26.2}" \
   --target final \
   -t "${FULL_IMAGE}" \
   "${REPO_ROOT}"
