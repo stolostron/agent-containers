@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # podman-run.sh — run an opencode container natively with podman
-# Usage: podman-run.sh <opencode-golang|opencode-python> [tui|serve]
+# Usage: podman-run.sh <opencode> [tui|serve]
 #
 #   tui   (default) — interactive TUI, attached to terminal
 #   serve           — headless server on port 4096, runs in background
@@ -57,10 +57,9 @@ optional_secret_val() {
 
 case "$TYPE" in
 
-opencode-golang|opencode-python)
+opencode)
     SECRET="opencode-secret"
-    LANG="${TYPE#opencode-}"
-    IMAGE="${REGISTRY}/opencode-${LANG}:${IMAGE_TAG}"
+    IMAGE="${REGISTRY}/opencode:${IMAGE_TAG}"
 
     if ! podman secret inspect "$SECRET" &>/dev/null; then
         echo "Error: podman secret '${SECRET}' not found." >&2
@@ -90,7 +89,7 @@ opencode-golang|opencode-python)
         -e GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud/credentials.json
         -e "GOOGLE_API_KEY=${GOOGLE_API_KEY}"
         -v "${TMPDIR}/credentials.json:/app/gcloud/credentials.json:ro,Z"
-        -v "${TYPE}-opencode-local:/home/node/.local:Z,U"
+        -v "opencode-local:/home/node/.local:Z,U"
     )
     [[ -n "$GITHUB_PAT" ]] && COMMON_ARGS+=(-e "GITHUB_PAT=${GITHUB_PAT}")
 
@@ -120,7 +119,7 @@ opencode-golang|opencode-python)
 
 *)
     echo "Error: unknown type '${TYPE}'." >&2
-    echo "Expected: opencode-golang | opencode-python" >&2
+    echo "Expected: opencode" >&2
     exit 1
     ;;
 esac

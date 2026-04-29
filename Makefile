@@ -4,17 +4,14 @@
 # Stores REGISTRY, IMAGE_TAG, IMAGE_PULL_SECRET, and NAMESPACE between sessions.
 -include .push-defaults
 
-# Image variants and their LANG build-arg
-IMAGES := opencode-golang opencode-python
-LANG_opencode-golang := golang
-LANG_opencode-python := python
+IMAGES := opencode
 
 # Toolchain versions — update all with: make update-deps
 GO_VERSION       ?= 1.26.2
-PYTHON_VERSION   ?= null
+PYTHON_VERSION   ?= 3.13.13
 PYTHON_BUILD     ?= 20260414
 OPENCODE_VERSION ?= 1.14.20
-GH_VERSION       ?= 2.90.0
+GH_VERSION       ?= 2.91.0
 
 # --------------------------------------------------------------------------
 # Per-image targets  (generated for each image in IMAGES)
@@ -35,13 +32,14 @@ define IMAGE_TARGETS
 
 .PHONY: build-$(1) build-fast-$(1) push-$(1) publish-$(1)
 build-$(1):
-	@GO_VERSION=$(GO_VERSION) bash scripts/build.sh $(1) containerfiles/Containerfile.opencode $(LANG_$(1))
+	@GO_VERSION=$(GO_VERSION) PYTHON_VERSION=$(PYTHON_VERSION) PYTHON_BUILD=$(PYTHON_BUILD) bash scripts/build.sh $(1) containerfiles/Containerfile.opencode
 build-fast-$(1):
 	podman build -f containerfiles/Containerfile.opencode \
-	  --build-arg LANG=$(LANG_$(1)) \
 	  --build-arg GH_VERSION=$(GH_VERSION) \
 	  --build-arg GO_VERSION=$(GO_VERSION) \
 	  --build-arg OPENCODE_VERSION=$(OPENCODE_VERSION) \
+	  --build-arg PYTHON_VERSION=$(PYTHON_VERSION) \
+	  --build-arg PYTHON_BUILD=$(PYTHON_BUILD) \
 	  --target final -t $$(REGISTRY)/$(1):$$(IMAGE_TAG) .
 push-$(1):
 	@bash scripts/push.sh $(1)
@@ -92,8 +90,8 @@ create-opencode-secret:  ## Create Podman + K8s secrets.  Optional: CREDS_FILE=<
 .PHONY: update-deps
 update-deps:  ## Fetch latest versions of all dependencies and update Makefile
 	$(eval LATEST_GO := $(shell curl -fsSL 'https://go.dev/dl/?mode=json' | jq -r '.[0].version' | sed 's/go//'))
-	$(eval LATEST_PY := $(shell curl -fsSL 'https://endoflife.date/api/python.json' | jq -r '[.[] | select(.eol == false)] | sort_by(.latest) | last | .latest'))
 	$(eval LATEST_BUILD := $(shell curl -fsSL 'https://api.github.com/repos/indygreg/python-build-standalone/releases/latest' | jq -r '.tag_name'))
+	$(eval LATEST_PY := $(shell curl -fsSL 'https://api.github.com/repos/indygreg/python-build-standalone/releases/tags/$(LATEST_BUILD)' | jq -r '[.assets[].name | capture("cpython-(?P<v>3\\.[0-9]+\\.[0-9]+)\\+.*x86_64-unknown-linux-gnu-install_only\\.tar\\.gz")] | map(select(. != null)) | sort_by(.v | split(".") | map(tonumber)) | last | .v'))
 	$(eval LATEST_OC := $(shell npm view opencode-ai version))
 	$(eval LATEST_GH := $(shell curl -fsSL 'https://api.github.com/repos/cli/cli/releases/latest' | jq -r '.tag_name | ltrimstr("v")'))
 	@echo "Go: $(LATEST_GO)  Python: $(LATEST_PY) (build: $(LATEST_BUILD))  opencode: $(LATEST_OC)  gh: $(LATEST_GH)"
