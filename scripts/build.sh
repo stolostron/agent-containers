@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # build.sh — prompt for registry/image_tag, build, save defaults
-# Usage: build.sh <image-name> <containerfile> <lang>
+# Usage: build.sh <image-name> <containerfile>
 set -euo pipefail
 
-IMAGE_NAME="$1"    # e.g. gemini-cli-golang
-CONTAINERFILE="$2" # e.g. containerfiles/Containerfile.gemini
-LANG="$3"          # e.g. golang
+IMAGE_NAME="$1"    # e.g. opencode
+CONTAINERFILE="$2" # e.g. containerfiles/Containerfile.opencode
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${SCRIPT_DIR}/.."
@@ -52,10 +51,11 @@ echo ""
 echo "Building ${FULL_IMAGE} ..."
 podman build \
   -f "${REPO_ROOT}/${CONTAINERFILE}" \
-  --build-arg LANG="${LANG}" \
   --build-arg GH_VERSION="${GH_VERSION:-2.74.0}" \
   --build-arg GO_VERSION="${GO_VERSION:-1.26.2}" \
-  --target final \
+  --build-arg OPENCODE_VERSION="${OPENCODE_VERSION:-1.14.20}" \
+  --build-arg PYTHON_VERSION="${PYTHON_VERSION:-3.13.13}" \
+  --build-arg PYTHON_BUILD="${PYTHON_BUILD:-20260414}" \
   -t "${FULL_IMAGE}" \
   "${REPO_ROOT}"
 

@@ -1,16 +1,15 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: opencode-golang
+  name: opencode
   labels:
-    app: opencode-golang
+    app: opencode
     tool: opencode
-    lang: golang
 spec:
   IMAGE_PULL_SECRET_BLOCK
   containers:
-    - name: opencode-golang
-      image: REGISTRY/opencode-golang:IMAGE_TAG
+    - name: opencode
+      image: REGISTRY/opencode:IMAGE_TAG
       env:
         # Claude via Vertex AI
         - name: GOOGLE_CLOUD_PROJECT

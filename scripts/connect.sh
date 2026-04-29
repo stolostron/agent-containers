@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # connect.sh — port-forward an opencode K8s pod to localhost:4096
-# Usage: connect.sh <opencode-golang|opencode-python>
+# Usage: connect.sh <opencode>
 set -euo pipefail
 
 POD="$1"

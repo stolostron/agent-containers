@@ -1,7 +1,8 @@
-ARG LANG=golang
 ARG GH_VERSION=2.74.0
 ARG GO_VERSION=1.26.2
 ARG OPENCODE_VERSION=1.14.20
+ARG PYTHON_VERSION=3.13.13
+ARG PYTHON_BUILD=20260414
 
 # ---- Base: node + common tools + opencode ----
 FROM node:20-slim AS base-common
@@ -27,8 +28,6 @@ RUN mkdir -p /usr/local/share/npm-global \
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
 
-COPY --chown=node:node scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
-
 USER node
 RUN npm install -g opencode-ai@${OPENCODE_VERSION} && npm cache clean --force
 WORKDIR /workspace
@@ -36,7 +35,6 @@ WORKDIR /workspace
 ENV DEVCONTAINER=true
 ENV EDITOR=nano
 ENV NODE_OPTIONS=--max-old-space-size=1536
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Provider config: restrict to Claude (Vertex) and Gemini only.
 # Credentials are injected at runtime via K8s/Podman secrets.
@@ -47,10 +45,13 @@ USER root
 COPY --chmod=755 containerfiles/entrypoint.sh /usr/local/bin/entrypoint.sh
 USER node
 
-# ---- Golang variant ----
-FROM base-common AS lang-golang
+# ---- Final: Go + Python ----
+FROM base-common AS final
 ARG GO_VERSION
+ARG PYTHON_VERSION
+ARG PYTHON_BUILD
 USER root
+
 RUN set -ex; \
     ARCH=$(dpkg --print-architecture); \
     curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
@@ -58,17 +59,19 @@ RUN set -ex; \
     /usr/local/go/bin/go version
 ENV PATH=$PATH:/usr/local/go/bin
 ENV GOPATH=/home/node/go
-USER node
 
-# ---- Python variant ----
-FROM base-common AS lang-python
-USER root
-RUN apt-get update && apt-get install -y --no-install-recommends python3-pip python3-venv \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-USER node
+RUN set -ex; \
+    ARCH=$(dpkg --print-architecture); \
+    case "$ARCH" in \
+      amd64) PY_ARCH=x86_64 ;; \
+      arm64) PY_ARCH=aarch64 ;; \
+      *) echo "Unsupported arch: $ARCH" >&2 && exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/indygreg/python-build-standalone/releases/download/${PYTHON_BUILD}/cpython-${PYTHON_VERSION}+${PYTHON_BUILD}-${PY_ARCH}-unknown-linux-gnu-install_only.tar.gz" \
+        | tar -xz -C /usr/local --strip-components=1; \
+    python3 --version
 
-# ---- Final stage (selected by LANG build arg) ----
-FROM lang-${LANG} AS final
+USER node
 
 # GCP credentials path for Claude via Vertex AI — value injected at runtime
 ENV GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud/credentials.json
