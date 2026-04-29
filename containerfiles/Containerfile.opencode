@@ -1,31 +1,68 @@
-ARG GH_VERSION=2.74.0
+ARG FZF_VERSION=0.72.0
+ARG RG_VERSION=15.1.0
+ARG GH_VERSION=2.92.0
 ARG GO_VERSION=1.26.2
-ARG OPENCODE_VERSION=1.14.20
-ARG PYTHON_VERSION=3.13.13
+ARG OPENCODE_VERSION=1.14.29
+ARG PYTHON_VERSION=3.14.4
 ARG PYTHON_BUILD=20260414
 
-# ---- Base: node + common tools + opencode ----
-FROM node:20-slim AS base-common
+# ---- Base: UBI 10 Node.js 24 + common tools + opencode ----
+FROM registry.access.redhat.com/ubi10/nodejs-24 AS base-common
+ARG FZF_VERSION
+ARG RG_VERSION
 ARG GH_VERSION
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl ca-certificates zsh fzf vim nano less jq ripgrep openssh-client \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+# The base image ends with a non-root USER; reclaim root for setup
+USER root
+
+# UBI does not provide a "node" user; create one to match the node:20-slim convention
+RUN groupadd -g 1000 node && useradd -u 1000 -g node -m -s /bin/bash node
+
+RUN dnf install -y \
+    git curl ca-certificates zsh vim-minimal nano less jq openssh-clients sudo \
+    && dnf clean all \
+    && echo "node ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/node \
+    && chmod 0440 /etc/sudoers.d/node
 
 RUN set -ex; \
-    ARCH=$(dpkg --print-architecture); \
-    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${ARCH}.tar.gz" \
-        | tar -xz -C /usr/local/bin --strip-components=2 "gh_${GH_VERSION}_linux_${ARCH}/bin/gh"; \
+    ARCH_RAW=$(uname -m); \
+    case "$ARCH_RAW" in \
+      x86_64)  ARCH_SHORT=amd64 ;; \
+      aarch64) ARCH_SHORT=arm64 ;; \
+      *) echo "Unsupported arch: $ARCH_RAW" >&2 && exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/junegunn/fzf/releases/download/v${FZF_VERSION}/fzf-${FZF_VERSION}-linux_${ARCH_SHORT}.tar.gz" \
+        | tar -xz -C /usr/local/bin fzf; \
+    chmod +x /usr/local/bin/fzf; \
+    fzf --version
+
+RUN set -ex; \
+    ARCH_RAW=$(uname -m); \
+    curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep-${RG_VERSION}-${ARCH_RAW}-unknown-linux-musl.tar.gz" \
+        | tar -xz -C /usr/local/bin --strip-components=1 \
+              "ripgrep-${RG_VERSION}-${ARCH_RAW}-unknown-linux-musl/rg"; \
+    chmod +x /usr/local/bin/rg; \
+    rg --version
+
+RUN set -ex; \
+    ARCH_RAW=$(uname -m); \
+    case "$ARCH_RAW" in \
+      x86_64)  ARCH_SHORT=amd64 ;; \
+      aarch64) ARCH_SHORT=arm64 ;; \
+      *) echo "Unsupported arch: $ARCH_RAW" >&2 && exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${ARCH_SHORT}.tar.gz" \
+        | tar -xz -C /usr/local/bin --strip-components=2 "gh_${GH_VERSION}_linux_${ARCH_SHORT}/bin/gh"; \
     chmod +x /usr/local/bin/gh; \
     gh --version
 
 # npm global prefix under /usr/local/share, owned by the non-root "node" user
-# (the "node" user already exists in the base image)
 RUN mkdir -p /usr/local/share/npm-global \
     && chown -R node:node /usr/local/share/npm-global \
     && mkdir -p /workspace \
     && chown node:node /workspace
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
+ENV NPM_CONFIG_CACHE=/home/node/.npm
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
 
 USER node
@@ -53,19 +90,24 @@ ARG PYTHON_BUILD
 USER root
 
 RUN set -ex; \
-    ARCH=$(dpkg --print-architecture); \
-    curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+    ARCH_RAW=$(uname -m); \
+    case "$ARCH_RAW" in \
+      x86_64)  ARCH_SHORT=amd64 ;; \
+      aarch64) ARCH_SHORT=arm64 ;; \
+      *) echo "Unsupported arch: $ARCH_RAW" >&2 && exit 1 ;; \
+    esac; \
+    curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-${ARCH_SHORT}.tar.gz" \
         | tar -xz -C /usr/local; \
     /usr/local/go/bin/go version
 ENV PATH=$PATH:/usr/local/go/bin
 ENV GOPATH=/home/node/go
 
 RUN set -ex; \
-    ARCH=$(dpkg --print-architecture); \
-    case "$ARCH" in \
-      amd64) PY_ARCH=x86_64 ;; \
-      arm64) PY_ARCH=aarch64 ;; \
-      *) echo "Unsupported arch: $ARCH" >&2 && exit 1 ;; \
+    ARCH_RAW=$(uname -m); \
+    case "$ARCH_RAW" in \
+      x86_64)  PY_ARCH=x86_64 ;; \
+      aarch64) PY_ARCH=aarch64 ;; \
+      *) echo "Unsupported arch: $ARCH_RAW" >&2 && exit 1 ;; \
     esac; \
     curl -fsSL "https://github.com/indygreg/python-build-standalone/releases/download/${PYTHON_BUILD}/cpython-${PYTHON_VERSION}+${PYTHON_BUILD}-${PY_ARCH}-unknown-linux-gnu-install_only.tar.gz" \
         | tar -xz -C /usr/local --strip-components=1; \

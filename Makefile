@@ -8,10 +8,12 @@ IMAGES := opencode
 
 # Toolchain versions — update all with: make update-deps
 GO_VERSION       ?= 1.26.2
-PYTHON_VERSION   ?= 3.13.13
+PYTHON_VERSION   ?= 3.14.4
 PYTHON_BUILD     ?= 20260414
-OPENCODE_VERSION ?= 1.14.20
-GH_VERSION       ?= 2.91.0
+OPENCODE_VERSION ?= 1.14.29
+GH_VERSION       ?= 2.92.0
+FZF_VERSION      ?= 0.72.0
+RG_VERSION       ?= 15.1.0
 
 # --------------------------------------------------------------------------
 # Per-image targets  (generated for each image in IMAGES)
@@ -40,6 +42,8 @@ build-fast-$(1):
 	  --build-arg OPENCODE_VERSION=$(OPENCODE_VERSION) \
 	  --build-arg PYTHON_VERSION=$(PYTHON_VERSION) \
 	  --build-arg PYTHON_BUILD=$(PYTHON_BUILD) \
+	  --build-arg FZF_VERSION=$(FZF_VERSION) \
+	  --build-arg RG_VERSION=$(RG_VERSION) \
 	  --target final -t $$(REGISTRY)/$(1):$$(IMAGE_TAG) .
 push-$(1):
 	@bash scripts/push.sh $(1)
@@ -91,15 +95,19 @@ create-opencode-secret:  ## Create Podman + K8s secrets.  Optional: CREDS_FILE=<
 update-deps:  ## Fetch latest versions of all dependencies and update Makefile
 	$(eval LATEST_GO := $(shell curl -fsSL 'https://go.dev/dl/?mode=json' | jq -r '.[0].version' | sed 's/go//'))
 	$(eval LATEST_BUILD := $(shell curl -fsSL 'https://api.github.com/repos/indygreg/python-build-standalone/releases/latest' | jq -r '.tag_name'))
-	$(eval LATEST_PY := $(shell curl -fsSL 'https://api.github.com/repos/indygreg/python-build-standalone/releases/tags/$(LATEST_BUILD)' | jq -r '[.assets[].name | capture("cpython-(?P<v>3\\.[0-9]+\\.[0-9]+)\\+.*x86_64-unknown-linux-gnu-install_only\\.tar\\.gz")] | map(select(. != null)) | sort_by(.v | split(".") | map(tonumber)) | last | .v'))
+	$(eval LATEST_PY := $(shell curl -fsSL 'https://api.github.com/repos/indygreg/python-build-standalone/releases/tags/$(LATEST_BUILD)' | jq -r '.assets[].name' | grep -oP 'cpython-\K[0-9]+\.[0-9]+\.[0-9]+(?=\+.*x86_64-unknown-linux-gnu-install_only\.tar\.gz)' | sort -V | tail -1))
 	$(eval LATEST_OC := $(shell npm view opencode-ai version))
 	$(eval LATEST_GH := $(shell curl -fsSL 'https://api.github.com/repos/cli/cli/releases/latest' | jq -r '.tag_name | ltrimstr("v")'))
-	@echo "Go: $(LATEST_GO)  Python: $(LATEST_PY) (build: $(LATEST_BUILD))  opencode: $(LATEST_OC)  gh: $(LATEST_GH)"
+	$(eval LATEST_FZF := $(shell curl -fsSL 'https://api.github.com/repos/junegunn/fzf/releases/latest' | jq -r '.tag_name | ltrimstr("v")'))
+	$(eval LATEST_RG := $(shell curl -fsSL 'https://api.github.com/repos/BurntSushi/ripgrep/releases/latest' | jq -r '.tag_name'))
+	@echo "Go: $(LATEST_GO)  Python: $(LATEST_PY) (build: $(LATEST_BUILD))  opencode: $(LATEST_OC)  gh: $(LATEST_GH)  fzf: $(LATEST_FZF)  rg: $(LATEST_RG)"
 	@sed -i 's/^GO_VERSION\s*?= .*/GO_VERSION       ?= $(LATEST_GO)/' Makefile
 	@sed -i 's/^PYTHON_VERSION\s*?= .*/PYTHON_VERSION   ?= $(LATEST_PY)/' Makefile
 	@sed -i 's/^PYTHON_BUILD\s*?= .*/PYTHON_BUILD     ?= $(LATEST_BUILD)/' Makefile
 	@sed -i 's/^OPENCODE_VERSION\s*?= .*/OPENCODE_VERSION ?= $(LATEST_OC)/' Makefile
 	@sed -i 's/^GH_VERSION\s*?= .*/GH_VERSION       ?= $(LATEST_GH)/' Makefile
+	@sed -i 's/^FZF_VERSION\s*?= .*/FZF_VERSION      ?= $(LATEST_FZF)/' Makefile
+	@sed -i 's/^RG_VERSION\s*?= .*/RG_VERSION       ?= $(LATEST_RG)/' Makefile
 
 .PHONY: set-image-tag
 set-image-tag:  ## Set IMAGE_TAG in .push-defaults (usage: make set-image-tag IMAGE_TAG=0.3.2)

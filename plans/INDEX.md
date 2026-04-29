@@ -13,6 +13,15 @@ Parent epic: [ACM-32892](https://redhat.atlassian.net/browse/ACM-32892) — Impl
   pr: "https://github.com/jnpacker/agent-containers/pull/2"
   summary: "Merged Go+Python into single opencode image via python-build-standalone; dropped LANG build-arg, per-lang k8s manifests, and legacy publish.sh"
 
+# ──────────────────────────────────────────────────────────
+- date: "2026-04-29"
+  title: "Switch container base image to UBI 10 / Node.js 24 for enterprise compliance and size optimization"
+  jira: "ACM-33426"
+  jira_url: "https://redhat.atlassian.net/browse/ACM-33426"
+  status: "Done"
+  pr: "https://github.com/jnpacker/agent-containers/pull/3"
+  summary: "Replace node:20-slim with ubi10/nodejs-24; dnf with passwordless sudo for agent package installs; binary-pin fzf+ripgrep; bump opencode/gh/Python; fix arch detection"
+
 ## Feature Plans
 
 | Plan | Summary | Jira | PR |
