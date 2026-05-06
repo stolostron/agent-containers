@@ -4,16 +4,22 @@
 # Stores REGISTRY, IMAGE_TAG, IMAGE_PULL_SECRET, and NAMESPACE between sessions.
 -include .push-defaults
 
-IMAGES := opencode
+IMAGES := opencode crush
 
 # Toolchain versions — update all with: make update-deps
 GO_VERSION       ?= 1.26.2
 PYTHON_VERSION   ?= 3.14.4
 PYTHON_BUILD     ?= 20260414
 OPENCODE_VERSION ?= 1.14.29
+CRUSH_VERSION    ?= 0.65.3
 GH_VERSION       ?= 2.92.0
 FZF_VERSION      ?= 0.72.0
 RG_VERSION       ?= 15.1.0
+
+# Per-image build targets
+TARGET_opencode := opencode
+TARGET_crush    := crush
+CONTAINERFILE   := containerfiles/Containerfile.agents
 
 # --------------------------------------------------------------------------
 # Per-image targets  (generated for each image in IMAGES)
@@ -34,17 +40,18 @@ define IMAGE_TARGETS
 
 .PHONY: build-$(1) build-fast-$(1) push-$(1) publish-$(1)
 build-$(1):
-	@GO_VERSION=$(GO_VERSION) PYTHON_VERSION=$(PYTHON_VERSION) PYTHON_BUILD=$(PYTHON_BUILD) bash scripts/build.sh $(1) containerfiles/Containerfile.opencode
+	@GO_VERSION=$(GO_VERSION) PYTHON_VERSION=$(PYTHON_VERSION) PYTHON_BUILD=$(PYTHON_BUILD) CRUSH_VERSION=$(CRUSH_VERSION) OPENCODE_VERSION=$(OPENCODE_VERSION) bash scripts/build.sh $(1) $(CONTAINERFILE)
 build-fast-$(1):
-	podman build -f containerfiles/Containerfile.opencode \
+	podman build -f $(CONTAINERFILE) \
 	  --build-arg GH_VERSION=$(GH_VERSION) \
 	  --build-arg GO_VERSION=$(GO_VERSION) \
 	  --build-arg OPENCODE_VERSION=$(OPENCODE_VERSION) \
+	  --build-arg CRUSH_VERSION=$(CRUSH_VERSION) \
 	  --build-arg PYTHON_VERSION=$(PYTHON_VERSION) \
 	  --build-arg PYTHON_BUILD=$(PYTHON_BUILD) \
 	  --build-arg FZF_VERSION=$(FZF_VERSION) \
 	  --build-arg RG_VERSION=$(RG_VERSION) \
-	  --target final -t $$(REGISTRY)/$(1):$$(IMAGE_TAG) .
+	  --target $(TARGET_$(1)) -t $$(REGISTRY)/$(1):$$(IMAGE_TAG) .
 push-$(1):
 	@bash scripts/push.sh $(1)
 publish-$(1): build-fast-$(1) push-$(1)
@@ -64,7 +71,7 @@ resume-podman-$(1):
 serve-podman-$(1):
 	@bash scripts/podman-run.sh $(1) serve
 attach-podman-$(1):
-	opencode attach http://localhost:4096
+	$(1) attach http://localhost:4096
 connect-$(1):
 	@bash scripts/connect.sh $(1)
 
@@ -97,14 +104,16 @@ update-deps:  ## Fetch latest versions of all dependencies and update Makefile
 	$(eval LATEST_BUILD := $(shell curl -fsSL 'https://api.github.com/repos/indygreg/python-build-standalone/releases/latest' | jq -r '.tag_name'))
 	$(eval LATEST_PY := $(shell curl -fsSL 'https://api.github.com/repos/indygreg/python-build-standalone/releases/tags/$(LATEST_BUILD)' | jq -r '.assets[].name' | grep -oP 'cpython-\K[0-9]+\.[0-9]+\.[0-9]+(?=\+.*x86_64-unknown-linux-gnu-install_only\.tar\.gz)' | sort -V | tail -1))
 	$(eval LATEST_OC := $(shell npm view opencode-ai version))
+	$(eval LATEST_CRUSH := $(shell curl -fsSL 'https://api.github.com/repos/charmbracelet/crush/releases/latest' | jq -r '.tag_name | ltrimstr("v")'))
 	$(eval LATEST_GH := $(shell curl -fsSL 'https://api.github.com/repos/cli/cli/releases/latest' | jq -r '.tag_name | ltrimstr("v")'))
 	$(eval LATEST_FZF := $(shell curl -fsSL 'https://api.github.com/repos/junegunn/fzf/releases/latest' | jq -r '.tag_name | ltrimstr("v")'))
 	$(eval LATEST_RG := $(shell curl -fsSL 'https://api.github.com/repos/BurntSushi/ripgrep/releases/latest' | jq -r '.tag_name'))
-	@echo "Go: $(LATEST_GO)  Python: $(LATEST_PY) (build: $(LATEST_BUILD))  opencode: $(LATEST_OC)  gh: $(LATEST_GH)  fzf: $(LATEST_FZF)  rg: $(LATEST_RG)"
+	@echo "Go: $(LATEST_GO)  Python: $(LATEST_PY) (build: $(LATEST_BUILD))  opencode: $(LATEST_OC)  crush: $(LATEST_CRUSH)  gh: $(LATEST_GH)  fzf: $(LATEST_FZF)  rg: $(LATEST_RG)"
 	@sed -i 's/^GO_VERSION\s*?= .*/GO_VERSION       ?= $(LATEST_GO)/' Makefile
 	@sed -i 's/^PYTHON_VERSION\s*?= .*/PYTHON_VERSION   ?= $(LATEST_PY)/' Makefile
 	@sed -i 's/^PYTHON_BUILD\s*?= .*/PYTHON_BUILD     ?= $(LATEST_BUILD)/' Makefile
 	@sed -i 's/^OPENCODE_VERSION\s*?= .*/OPENCODE_VERSION ?= $(LATEST_OC)/' Makefile
+	@sed -i 's/^CRUSH_VERSION\s*?= .*/CRUSH_VERSION    ?= $(LATEST_CRUSH)/' Makefile
 	@sed -i 's/^GH_VERSION\s*?= .*/GH_VERSION       ?= $(LATEST_GH)/' Makefile
 	@sed -i 's/^FZF_VERSION\s*?= .*/FZF_VERSION      ?= $(LATEST_FZF)/' Makefile
 	@sed -i 's/^RG_VERSION\s*?= .*/RG_VERSION       ?= $(LATEST_RG)/' Makefile

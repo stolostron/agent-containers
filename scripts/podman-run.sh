@@ -117,9 +117,69 @@ opencode)
     esac
     ;;
 
+crush)
+    SECRET="crush-secret"
+    IMAGE="${REGISTRY}/crush:${IMAGE_TAG}"
+
+    if ! podman secret inspect "$SECRET" &>/dev/null; then
+        echo "Error: podman secret '${SECRET}' not found." >&2
+        echo "" >&2
+        echo "Available secrets:" >&2
+        podman secret ls >&2
+        echo "" >&2
+        echo "To create '${SECRET}': make create-crush-secret PROJECT_ID=xxx REGION=xxx GEMINI_API_KEY=xxx" >&2
+        exit 1
+    fi
+
+    PROJECT_ID=$(    secret_val "$SECRET" VERTEXAI_PROJECT)
+    REGION=$(        secret_val "$SECRET" VERTEXAI_LOCATION)
+    CREDS=$(         secret_val "$SECRET" "application_default_credentials.json")
+    GEMINI_API_KEY=$(optional_secret_val "$SECRET" GEMINI_API_KEY)
+    GITHUB_PAT=$(    optional_secret_val "$SECRET" GITHUB_PAT)
+
+    # Write credentials to a temp file mounted into the container
+    TMPDIR=$(mktemp -d)
+    trap 'rm -rf "$TMPDIR"' EXIT
+    printf '%s' "$CREDS" > "${TMPDIR}/credentials.json"
+
+    COMMON_ARGS=(
+        --name "$TYPE"
+        -e "VERTEXAI_PROJECT=${PROJECT_ID}"
+        -e "VERTEXAI_LOCATION=${REGION}"
+        -e GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud/credentials.json
+        -v "${TMPDIR}/credentials.json:/app/gcloud/credentials.json:ro,Z"
+        -v "crush-local:/home/node/.local:Z,U"
+    )
+    [[ -n "$GEMINI_API_KEY" ]] && COMMON_ARGS+=(-e "GEMINI_API_KEY=${GEMINI_API_KEY}")
+    [[ -n "$GITHUB_PAT" ]] && COMMON_ARGS+=(-e "GITHUB_PAT=${GITHUB_PAT}")
+
+    echo ""
+    echo "=== Run: ${IMAGE} (${MODE}) ==="
+
+    case "$MODE" in
+    tui)
+        podman run --rm -it \
+            "${COMMON_ARGS[@]}" \
+            "$IMAGE" crush "${EXTRA_ARGS[@]}"
+        ;;
+    serve)
+        podman run --rm -d \
+            "${COMMON_ARGS[@]}" \
+            -p 4096:4096 \
+            "$IMAGE" crush server --host tcp://0.0.0.0:4096
+        echo "Crush server started — connect at http://localhost:4096"
+        echo "Stop with: podman stop ${TYPE}"
+        ;;
+    *)
+        echo "Error: unknown mode '${MODE}'. Expected: tui | serve" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
 *)
     echo "Error: unknown type '${TYPE}'." >&2
-    echo "Expected: opencode" >&2
+    echo "Expected: opencode | crush" >&2
     exit 1
     ;;
 esac

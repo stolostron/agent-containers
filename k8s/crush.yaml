@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crush
+  labels:
+    app: crush
+    tool: crush
+spec:
+  IMAGE_PULL_SECRET_BLOCK
+  containers:
+    - name: crush
+      image: REGISTRY/crush:IMAGE_TAG
+      env:
+        # Claude via Vertex AI
+        - name: VERTEXAI_PROJECT
+          valueFrom:
+            secretKeyRef:
+              name: crush-secret
+              key: VERTEXAI_PROJECT
+        - name: VERTEXAI_LOCATION
+          valueFrom:
+            secretKeyRef:
+              name: crush-secret
+              key: VERTEXAI_LOCATION
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /app/gcloud/credentials.json
+        # Gemini via Google API key
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: crush-secret
+              key: GEMINI_API_KEY
+              optional: true
+        # GitHub PAT for git HTTPS auth (optional)
+        - name: GITHUB_PAT
+          valueFrom:
+            secretKeyRef:
+              name: crush-secret
+              key: GITHUB_PAT
+              optional: true
+        # Crush-specific telemetry disablement
+        - name: CRUSH_DISABLE_METRICS
+          value: "1"
+        - name: DO_NOT_TRACK
+          value: "1"
+      volumeMounts:
+        - name: gcloud-creds
+          mountPath: /app/gcloud
+          readOnly: true
+      stdin: true
+      tty: true
+      resources:
+        requests:
+          memory: "1Gi"
+          cpu: "500m"
+        limits:
+          memory: "2Gi"
+          cpu: "2000m"
+  volumes:
+    - name: gcloud-creds
+      secret:
+        secretName: crush-secret
+        items:
+          - key: application_default_credentials.json
+            path: credentials.json
+  restartPolicy: Never

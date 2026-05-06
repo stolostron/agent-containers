@@ -3,11 +3,12 @@ ARG RG_VERSION=15.1.0
 ARG GH_VERSION=2.92.0
 ARG GO_VERSION=1.26.2
 ARG OPENCODE_VERSION=1.14.29
+ARG CRUSH_VERSION=0.65.3
 ARG PYTHON_VERSION=3.14.4
 ARG PYTHON_BUILD=20260414
 
-# ---- Base: UBI 10 Node.js 24 + common tools + opencode ----
-FROM registry.access.redhat.com/ubi10/nodejs-24 AS base-common
+# ---- Stage 1: Base tools (shared by all agents) ----
+FROM registry.access.redhat.com/ubi10/nodejs-24 AS base-tools
 ARG FZF_VERSION
 ARG RG_VERSION
 ARG GH_VERSION
@@ -66,24 +67,19 @@ ENV NPM_CONFIG_CACHE=/home/node/.npm
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
 
 USER node
-RUN npm install -g opencode-ai@${OPENCODE_VERSION} && npm cache clean --force
 WORKDIR /workspace
 
 ENV DEVCONTAINER=true
 ENV EDITOR=nano
 ENV NODE_OPTIONS=--max-old-space-size=1536
 
-# Provider config: restrict to Claude (Vertex) and Gemini only.
-# Credentials are injected at runtime via K8s/Podman secrets.
-COPY --chown=node:node containerfiles/opencode.json /workspace/opencode.json
-
 # Entrypoint: configures git credentials at startup if GITHUB_PAT is set
 USER root
 COPY --chmod=755 containerfiles/entrypoint.sh /usr/local/bin/entrypoint.sh
 USER node
 
-# ---- Final: Go + Python ----
-FROM base-common AS final
+# ---- Stage 2: Runtime languages (Go + Python, shared by all agents) ----
+FROM base-tools AS base-runtimes
 ARG GO_VERSION
 ARG PYTHON_VERSION
 ARG PYTHON_BUILD
@@ -115,8 +111,54 @@ RUN set -ex; \
 
 USER node
 
+# ---- Stage 3a: OpenCode agent ----
+FROM base-runtimes AS opencode
+ARG OPENCODE_VERSION
+
+USER node
+RUN npm install -g opencode-ai@${OPENCODE_VERSION} && npm cache clean --force
+
+# Provider config: restrict to Claude (Vertex) and Gemini only.
+# Credentials are injected at runtime via K8s/Podman secrets.
+COPY --chown=node:node containerfiles/opencode.json /workspace/opencode.json
+
 # GCP credentials path for Claude via Vertex AI — value injected at runtime
 ENV GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud/credentials.json
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["opencode"]
+
+# ---- Stage 3b: Crush agent ----
+FROM base-runtimes AS crush
+ARG CRUSH_VERSION
+
+USER root
+RUN set -ex; \
+    ARCH_RAW=$(uname -m); \
+    case "$ARCH_RAW" in \
+      x86_64)  CRUSH_ARCH=x86_64 ;; \
+      aarch64) CRUSH_ARCH=arm64 ;; \
+      *) echo "Unsupported arch: $ARCH_RAW" >&2 && exit 1 ;; \
+    esac; \
+    FILENAME="crush_${CRUSH_VERSION}_Linux_${CRUSH_ARCH}.tar.gz"; \
+    URL="https://github.com/charmbracelet/crush/releases/download/v${CRUSH_VERSION}/${FILENAME}"; \
+    echo "Downloading Crush v${CRUSH_VERSION} for ${CRUSH_ARCH}..."; \
+    curl --retry 5 --retry-delay 3 --retry-all-errors -fsSL "${URL}" \
+        | tar -xz --strip-components=1 -C /usr/local/bin \
+            "crush_${CRUSH_VERSION}_Linux_${CRUSH_ARCH}/crush"; \
+    chmod +x /usr/local/bin/crush; \
+    crush --version
+
+USER node
+
+# Crush config directory and config file
+RUN mkdir -p /workspace/.config/crush
+COPY --chown=node:node containerfiles/crush.json /workspace/.config/crush/crush.json
+
+# GCP credentials path for Claude via Vertex AI — value injected at runtime
+ENV GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud/credentials.json
+ENV CRUSH_DISABLE_METRICS=1
+ENV DO_NOT_TRACK=1
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["crush"]

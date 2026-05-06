@@ -22,7 +22,10 @@
       "Bash(git -C /home/jpacker/workspace_git/agent-containers status)",
       "Bash(make build-fast-opencode-golang *)",
       "Bash(make build-fast-opencode-pygo *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(make update-deps *)",
+      "mcp__github-jnpacker__search_pull_requests",
+      "Bash(make build-fast-crush *)"
     ]
   }
 }

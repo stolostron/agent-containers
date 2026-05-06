@@ -1,0 +1,8 @@
+{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "disable_metrics": true,
+    "disable_notifications": true,
+    "data_directory": ".crush"
+  }
+}

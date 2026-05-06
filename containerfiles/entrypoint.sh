@@ -14,15 +14,18 @@ fi
 
 # Write OpenCode auth.json for API-key-based providers.
 # OpenCode does not read API keys from env vars — it requires auth.json.
+# Crush reads API keys directly from env vars, so skip this for crush.
 # Format: {"<provider>": {"type": "api", "key": "<key>"}}
-AUTH_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/opencode"
-mkdir -p "$AUTH_DIR"
-jq -n \
-    --arg gak "${GOOGLE_API_KEY:-}" \
-    '{
-        google: (if $gak != "" then {"type": "api", "key": $gak} else empty end)
-    }
-    | with_entries(select(.value != null))' \
-    > "${AUTH_DIR}/auth.json"
+if [ "$1" = "opencode" ]; then
+    AUTH_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/opencode"
+    mkdir -p "$AUTH_DIR"
+    jq -n \
+        --arg gak "${GOOGLE_API_KEY:-}" \
+        '{
+            google: (if $gak != "" then {"type": "api", "key": $gak} else empty end)
+        }
+        | with_entries(select(.value != null))' \
+        > "${AUTH_DIR}/auth.json"
+fi
 
 exec "$@"
