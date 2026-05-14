@@ -45,8 +45,8 @@ Parent epic: [ACM-32892](https://redhat.atlassian.net/browse/ACM-32892) — Impl
   title: "Enable LSPs for Go and Python in Crush and OpenCode agent containers"
   jira: "ACM-34104"
   jira_url: "https://redhat.atlassian.net/browse/ACM-34104"
-  status: "In Progress"
-  pr: ~
+  status: "Done"
+  pr: "https://github.com/stolostron/agent-containers/pull/7"
   summary: "Install gopls and pyright in base-runtimes stage; add LSP config to crush.json and opencode.json"
 
 ## Feature Plans
