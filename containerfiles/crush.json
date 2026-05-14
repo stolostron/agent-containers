@@ -4,5 +4,14 @@
     "disable_metrics": true,
     "disable_notifications": true,
     "data_directory": ".crush"
+  },
+  "lsp": {
+    "go": {
+      "command": "gopls"
+    },
+    "python": {
+      "command": "pyright-langserver",
+      "args": ["--stdio"]
+    }
   }
 }

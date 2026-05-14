@@ -1,3 +1,11 @@
 {
-  "enabled_providers": ["google-vertex-anthropic", "google"]
+  "enabled_providers": ["google-vertex-anthropic", "google"],
+  "lsp": {
+    "go": {
+      "command": ["gopls"]
+    },
+    "python": {
+      "command": ["pyright-langserver", "--stdio"]
+    }
+  }
 }

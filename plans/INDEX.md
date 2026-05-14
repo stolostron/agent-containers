@@ -40,6 +40,15 @@ Parent epic: [ACM-32892](https://redhat.atlassian.net/browse/ACM-32892) — Impl
   pr: "https://github.com/stolostron/agent-containers/pull/6"
   summary: "Restored jira-mcp-server wheel install (JIRA_MCP_VERSION=0.1.0) to Containerfile.agents, Makefile, and build.sh; fixed aggregate build prompting and update-and-rebuild NOPROMPT passthrough"
 
+# ──────────────────────────────────────────────────────────
+- date: "2026-05-14"
+  title: "Enable LSPs for Go and Python in Crush and OpenCode agent containers"
+  jira: "ACM-34104"
+  jira_url: "https://redhat.atlassian.net/browse/ACM-34104"
+  status: "In Progress"
+  pr: ~
+  summary: "Install gopls and pyright in base-runtimes stage; add LSP config to crush.json and opencode.json"
+
 ## Feature Plans
 
 | Plan | Summary | Jira | PR |
