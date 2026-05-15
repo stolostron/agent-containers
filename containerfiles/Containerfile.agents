@@ -120,6 +120,11 @@ RUN set -ex; \
     && rm -f /tmp/jira_mcp_server-*.whl \
     && jira-mcp-server --help | head -5
 
+# Install LSP servers (gopls for Go, pyright for Python)
+RUN /usr/local/go/bin/go install golang.org/x/tools/gopls@latest
+ENV PATH=$PATH:/home/node/go/bin
+RUN python3 -m pip install --no-cache-dir pyright
+
 USER node
 
 # ---- Stage 3a: OpenCode agent ----
