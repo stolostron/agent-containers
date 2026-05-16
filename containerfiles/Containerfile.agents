@@ -7,6 +7,8 @@ ARG CRUSH_VERSION=0.65.3
 ARG PYTHON_VERSION=3.14.4
 ARG PYTHON_BUILD=20260414
 ARG JIRA_MCP_VERSION=0.1.0
+ARG GOPLS_VERSION=0.21.1
+ARG PYRIGHT_VERSION=1.1.409
 
 # ---- Stage 1: Base tools (shared by all agents) ----
 FROM registry.access.redhat.com/ubi10/nodejs-24 AS base-tools
@@ -84,6 +86,8 @@ FROM base-tools AS base-runtimes
 ARG GO_VERSION
 ARG PYTHON_VERSION
 ARG PYTHON_BUILD
+ARG GOPLS_VERSION
+ARG PYRIGHT_VERSION
 USER root
 
 RUN set -ex; \
@@ -120,10 +124,10 @@ RUN set -ex; \
     && rm -f /tmp/jira_mcp_server-*.whl \
     && jira-mcp-server --help | head -5
 
-# Install LSP servers (gopls for Go, pyright for Python)
-RUN /usr/local/go/bin/go install golang.org/x/tools/gopls@latest
+# Install LSP servers (gopls for Go, pyright for Python) — versions pinned via ARGs
+RUN /usr/local/go/bin/go install golang.org/x/tools/gopls@v${GOPLS_VERSION}
 ENV PATH=$PATH:/home/node/go/bin
-RUN python3 -m pip install --no-cache-dir pyright
+RUN python3 -m pip install --no-cache-dir pyright==${PYRIGHT_VERSION}
 
 USER node
 
