@@ -54,9 +54,9 @@ Parent epic: [ACM-32892](https://redhat.atlassian.net/browse/ACM-32892) — Impl
   title: "Pin LSP versions (gopls, pyright) and integrate into build toolchain"
   jira: "ACM-34129"
   jira_url: "https://redhat.atlassian.net/browse/ACM-34129"
-  status: "In Progress"
-  pr: ~
-  summary: "Pin gopls and pyright to explicit versions via Containerfile ARGs, Makefile variables, build.sh args, and update-deps auto-fetch"
+  status: "Done"
+  pr: "https://github.com/stolostron/agent-containers/pull/8"
+  summary: "Pinned gopls 0.21.1 and pyright 1.1.409 via Containerfile ARGs, Makefile variables, build.sh --build-arg flags, and update-deps auto-fetch; fixed INDEX.md separators"
 
 ## Feature Plans
 
