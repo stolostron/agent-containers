@@ -132,7 +132,13 @@ FROM base-runtimes AS opencode
 ARG OPENCODE_VERSION
 
 USER node
-RUN npm install -g opencode-ai@${OPENCODE_VERSION} && npm cache clean --force
+RUN npm install -g opencode-ai@${OPENCODE_VERSION} --ignore-scripts && \
+    OC_DIR=/usr/local/share/npm-global/lib/node_modules/opencode-ai && \
+    cd "$OC_DIR" && npm install --ignore-scripts opencode-linux-x64@${OPENCODE_VERSION} && \
+    mkdir -p "$OC_DIR/bin" && \
+    cp "$OC_DIR/node_modules/opencode-linux-x64/bin/opencode" "$OC_DIR/bin/opencode.exe" && \
+    chmod 755 "$OC_DIR/bin/opencode.exe" && \
+    npm cache clean --force
 
 # Provider config: restrict to Claude (Vertex) and Gemini only.
 # Credentials are injected at runtime via K8s/Podman secrets.
