@@ -13,7 +13,7 @@ Parent epic: [ACM-32892](https://redhat.atlassian.net/browse/ACM-32892) — Impl
   pr: "https://github.com/jnpacker/agent-containers/pull/2"
   summary: "Merged Go+Python into single opencode image via python-build-standalone; dropped LANG build-arg, per-lang k8s manifests, and legacy publish.sh"
 
-# ──────────────────────────────────────────────────────────
+---
 - date: "2026-04-29"
   title: "Switch container base image to UBI 10 / Node.js 24 for enterprise compliance and size optimization"
   jira: "ACM-33426"
@@ -22,7 +22,7 @@ Parent epic: [ACM-32892](https://redhat.atlassian.net/browse/ACM-32892) — Impl
   pr: "https://github.com/jnpacker/agent-containers/pull/3"
   summary: "Replace node:20-slim with ubi10/nodejs-24; dnf with passwordless sudo for agent package installs; binary-pin fzf+ripgrep; bump opencode/gh/Python; fix arch detection"
 
-# ──────────────────────────────────────────────────────────
+---
 - date: "2026-05-06"
   title: "Add Crush container image with shared Containerfile"
   jira: "ACM-33677"
@@ -31,7 +31,7 @@ Parent epic: [ACM-32892](https://redhat.atlassian.net/browse/ACM-32892) — Impl
   pr: "https://github.com/jnpacker/agent-containers/pull/4"
   summary: "Restructure Containerfile into multi-target build (base-tools → base-runtimes → opencode/crush); both images share Go/Python/tools layers, differing only in AI client"
 
-# ──────────────────────────────────────────────────────────
+---
 - date: "2026-05-08"
   title: "Restore jira-mcp-server installation in agent-containers fork"
   jira: "ACM-33944"
@@ -40,7 +40,7 @@ Parent epic: [ACM-32892](https://redhat.atlassian.net/browse/ACM-32892) — Impl
   pr: "https://github.com/stolostron/agent-containers/pull/6"
   summary: "Restored jira-mcp-server wheel install (JIRA_MCP_VERSION=0.1.0) to Containerfile.agents, Makefile, and build.sh; fixed aggregate build prompting and update-and-rebuild NOPROMPT passthrough"
 
-# ──────────────────────────────────────────────────────────
+---
 - date: "2026-05-14"
   title: "Enable LSPs for Go and Python in Crush and OpenCode agent containers"
   jira: "ACM-34104"
@@ -48,6 +48,15 @@ Parent epic: [ACM-32892](https://redhat.atlassian.net/browse/ACM-32892) — Impl
   status: "Done"
   pr: "https://github.com/stolostron/agent-containers/pull/7"
   summary: "Install gopls and pyright in base-runtimes stage; add LSP config to crush.json and opencode.json"
+
+---
+- date: "2026-05-16"
+  title: "Pin LSP versions (gopls, pyright) and integrate into build toolchain"
+  jira: "ACM-34129"
+  jira_url: "https://redhat.atlassian.net/browse/ACM-34129"
+  status: "Done"
+  pr: "https://github.com/stolostron/agent-containers/pull/8"
+  summary: "Pinned gopls 0.21.1 and pyright 1.1.409 via Containerfile ARGs, Makefile variables, build.sh --build-arg flags, and update-deps auto-fetch; fixed INDEX.md separators"
 
 ## Feature Plans
 
