@@ -1,0 +1,7 @@
+---
+description: Architecture and design
+globs: *
+alwaysApply: false
+---
+
+@docs/ARCHITECTURE.md
