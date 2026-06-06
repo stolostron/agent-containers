@@ -237,6 +237,21 @@ NAMESPACE=agent-coordinator
 
 Edit or delete to reset defaults.
 
+### Release workflow (updating toolchain + publishing new images)
+
+```bash
+# 1. Update all dependency versions in the Makefile (opencode, crush, go, python, etc.)
+make update-deps
+
+# 2. Bump the image tag (stored in ../agent-swarm/.push-defaults)
+make set-image-tag IMAGE_TAG=0.x.y
+
+# 3. Build and push all images to the registry
+make publish NOPROMPT=1
+
+# 4. Update AGENT_IMAGE_OPENCODE / AGENT_IMAGE_CRUSH in ../agent-swarm/.env to match the new tag
+```
+
 ### Provider Config (opencode.json)
 
 Baked into the image at `/workspace/opencode.json`. Restricts available providers to:

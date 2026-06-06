@@ -9,17 +9,17 @@ AC_DEFAULTS := $(firstword $(wildcard ../agent-swarm/.push-defaults) .push-defau
 IMAGES := opencode crush
 
 # Toolchain versions — update all with: make update-deps
-GO_VERSION       ?= 1.26.3
-PYTHON_VERSION   ?= 3.13.13
-PYTHON_BUILD     ?= 20260504
-OPENCODE_VERSION ?= 1.14.41
-CRUSH_VERSION    ?= 0.66.0
-GH_VERSION       ?= 2.92.0
-FZF_VERSION      ?= 0.72.0
+GO_VERSION       ?= 1.26.4
+PYTHON_VERSION   ?= 3.14.5
+PYTHON_BUILD     ?= 20260602
+OPENCODE_VERSION ?= 1.16.2
+CRUSH_VERSION    ?= 0.75.0
+GH_VERSION       ?= 2.93.0
+FZF_VERSION      ?= 0.73.1
 RG_VERSION       ?= 15.1.0
 JIRA_MCP_VERSION ?= 0.1.0
-GOPLS_VERSION    ?= 0.21.1
-PYRIGHT_VERSION  ?= 1.1.409
+GOPLS_VERSION    ?= 0.22.0
+PYRIGHT_VERSION  ?= 1.1.410
 
 # Per-image build targets
 TARGET_opencode := opencode

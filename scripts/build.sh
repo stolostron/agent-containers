@@ -69,8 +69,9 @@ podman build \
   --build-arg FZF_VERSION="${FZF_VERSION:-0.72.0}" \
   --build-arg RG_VERSION="${RG_VERSION:-15.1.0}" \
   --build-arg JIRA_MCP_VERSION="${JIRA_MCP_VERSION:-0.1.0}" \
-  --build-arg GOPLS_VERSION="${GOPLS_VERSION:-0.21.1}" \
+  --build-arg GOPLS_VERSION="${GOPLS_VERSION:-0.22.0}" \
   --build-arg PYRIGHT_VERSION="${PYRIGHT_VERSION:-1.1.409}" \
+  --build-arg MAKE_LS_VERSION="${MAKE_LS_VERSION:-0.1.9}" \
   --target "${IMAGE_NAME}" \
   -t "${FULL_IMAGE}" \
   "${REPO_ROOT}"

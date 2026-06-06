@@ -25,7 +25,29 @@
       "Bash(git *)",
       "Bash(make update-deps *)",
       "mcp__github-jnpacker__search_pull_requests",
-      "Bash(make build-fast-crush *)"
+      "Bash(make build-fast-crush *)",
+      "Bash(helm upgrade *)",
+      "Bash(helm show *)",
+      "WebFetch(domain:docs.nvidia.com)",
+      "Bash(helm registry *)",
+      "Bash(helm pull *)",
+      "Bash(HELM_EXPERIMENTAL_OCI=1 helm upgrade *)",
+      "Bash(helm version *)",
+      "Bash(HELM_EXPERIMENTAL_OCI=1 helm pull oci://ghcr.io/nvidia/openshell/helm-chart)",
+      "Bash(kubectl describe *)",
+      "Bash(helm uninstall *)",
+      "Bash(kubectl delete *)",
+      "Bash(kubectl rollout *)",
+      "Bash(mkdir -p ~/.config/openshell/gateways/k8s/mtls)",
+      "Bash(kubectl -n openshell get secret openshell-client-tls -o jsonpath='{.data.ca\\\\.crt}')",
+      "Bash(kubectl -n openshell get secret openshell-client-tls -o jsonpath='{.data.tls\\\\.crt}')",
+      "Bash(kubectl -n openshell get secret openshell-client-tls -o jsonpath='{.data.tls\\\\.key}')",
+      "Bash(mkdir -p ~/.k9s/openshell/gateways/k8s/mtls)",
+      "Bash(cp ~/.config/openshell/gateways/k8s/mtls/* ~/.k9s/openshell/gateways/k8s/mtls/)",
+      "Bash(kubectl logs *)",
+      "Bash(jq '.spec.containers[0] | {image, command, args, env: [.env[]?.name]}')",
+      "Bash(openshell sandbox *)",
+      "Bash(openshell *)"
     ]
   }
 }

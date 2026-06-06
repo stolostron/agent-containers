@@ -38,6 +38,12 @@ else
     fail "ARG PYRIGHT_VERSION not declared"
 fi
 
+if grep -qP '^ARG MAKE_LS_VERSION' "$CONTAINERFILE"; then
+    pass "ARG MAKE_LS_VERSION declared"
+else
+    fail "ARG MAKE_LS_VERSION not declared"
+fi
+
 if grep -qF 'gopls@v${GOPLS_VERSION}' "$CONTAINERFILE" || grep -qF 'gopls@${GOPLS_VERSION}' "$CONTAINERFILE"; then
     pass "gopls install uses \${GOPLS_VERSION}"
 else
@@ -48,6 +54,12 @@ if grep -qF 'pyright==${PYRIGHT_VERSION}' "$CONTAINERFILE"; then
     pass "pyright install uses \${PYRIGHT_VERSION}"
 else
     fail "pyright install does not reference \${PYRIGHT_VERSION}"
+fi
+
+if grep -qF 'make-ls@v${MAKE_LS_VERSION}' "$CONTAINERFILE"; then
+    pass "make-ls install uses \${MAKE_LS_VERSION}"
+else
+    fail "make-ls install does not reference \${MAKE_LS_VERSION}"
 fi
 
 # ARG must be re-declared inside base-runtimes stage (between FROM base-runtimes and next FROM)
@@ -65,6 +77,12 @@ else
     fail "PYRIGHT_VERSION ARG not re-declared in base-runtimes stage"
 fi
 
+if echo "$_base_runtimes_args" | grep -qP '^ARG MAKE_LS_VERSION'; then
+    pass "MAKE_LS_VERSION ARG re-declared in base-runtimes stage"
+else
+    fail "MAKE_LS_VERSION ARG not re-declared in base-runtimes stage"
+fi
+
 # Default values must be set (version pinned)
 if grep -qP '^ARG GOPLS_VERSION=\d' "$CONTAINERFILE"; then
     pass "GOPLS_VERSION has a default value pinned"
@@ -76,6 +94,12 @@ if grep -qP '^ARG PYRIGHT_VERSION=\d' "$CONTAINERFILE"; then
     pass "PYRIGHT_VERSION has a default value pinned"
 else
     fail "PYRIGHT_VERSION has no default value (not pinned)"
+fi
+
+if grep -qP '^ARG MAKE_LS_VERSION=\d' "$CONTAINERFILE"; then
+    pass "MAKE_LS_VERSION has a default value pinned"
+else
+    fail "MAKE_LS_VERSION has no default value (not pinned)"
 fi
 
 echo ""
@@ -97,6 +121,12 @@ else
     fail "PYRIGHT_VERSION variable not declared in Makefile"
 fi
 
+if grep -qP '^MAKE_LS_VERSION\s+\?=' "$MAKEFILE"; then
+    pass "MAKE_LS_VERSION variable declared in Makefile"
+else
+    fail "MAKE_LS_VERSION variable not declared in Makefile"
+fi
+
 # GOPLS_VERSION passed to build.sh invocation
 if grep -qP 'GOPLS_VERSION=\$\(GOPLS_VERSION\)' "$MAKEFILE"; then
     pass "GOPLS_VERSION passed to build.sh in Makefile"
@@ -108,6 +138,12 @@ if grep -qP 'PYRIGHT_VERSION=\$\(PYRIGHT_VERSION\)' "$MAKEFILE"; then
     pass "PYRIGHT_VERSION passed to build.sh in Makefile"
 else
     fail "PYRIGHT_VERSION not passed to build.sh in Makefile"
+fi
+
+if grep -qP 'MAKE_LS_VERSION=\$\(MAKE_LS_VERSION\)' "$MAKEFILE"; then
+    pass "MAKE_LS_VERSION passed to build.sh in Makefile"
+else
+    fail "MAKE_LS_VERSION not passed to build.sh in Makefile"
 fi
 
 # update-deps fetches gopls latest
@@ -128,6 +164,13 @@ else
     fail "update-deps does not fetch LATEST_PYRIGHT"
 fi
 
+# update-deps fetches make-ls latest
+if grep -qP 'LATEST_MAKE_LS\s*:=' "$MAKEFILE"; then
+    pass "update-deps fetches LATEST_MAKE_LS"
+else
+    fail "update-deps does not fetch LATEST_MAKE_LS"
+fi
+
 # update-deps sed-updates GOPLS_VERSION in Makefile
 if grep -qP "GOPLS_VERSION" "$MAKEFILE" && grep -qP "sed.*GOPLS_VERSION.*LATEST_GOPLS" "$MAKEFILE"; then
     pass "update-deps sed-updates GOPLS_VERSION in Makefile"
@@ -140,6 +183,13 @@ if grep -qP "sed.*PYRIGHT_VERSION.*LATEST_PYRIGHT" "$MAKEFILE"; then
     pass "update-deps sed-updates PYRIGHT_VERSION in Makefile"
 else
     fail "update-deps does not sed-update PYRIGHT_VERSION"
+fi
+
+# update-deps sed-updates MAKE_LS_VERSION in Makefile
+if grep -qP "sed.*MAKE_LS_VERSION.*LATEST_MAKE_LS" "$MAKEFILE"; then
+    pass "update-deps sed-updates MAKE_LS_VERSION in Makefile"
+else
+    fail "update-deps does not sed-update MAKE_LS_VERSION"
 fi
 
 echo ""
@@ -161,6 +211,12 @@ else
     fail "--build-arg PYRIGHT_VERSION= not in build.sh"
 fi
 
+if grep -qP '\-\-build-arg MAKE_LS_VERSION=' "$BUILD_SH"; then
+    pass "--build-arg MAKE_LS_VERSION= present in build.sh"
+else
+    fail "--build-arg MAKE_LS_VERSION= not in build.sh"
+fi
+
 # build.sh should use the env variable (not a hardcoded version)
 if grep -q 'build-arg GOPLS_VERSION="${GOPLS_VERSION' "$BUILD_SH"; then
     pass "--build-arg GOPLS_VERSION uses \${GOPLS_VERSION:-...} in build.sh"
@@ -172,6 +228,12 @@ if grep -q 'build-arg PYRIGHT_VERSION="${PYRIGHT_VERSION' "$BUILD_SH"; then
     pass "--build-arg PYRIGHT_VERSION uses \${PYRIGHT_VERSION:-...} in build.sh"
 else
     fail "--build-arg PYRIGHT_VERSION does not use \${PYRIGHT_VERSION:-...} in build.sh"
+fi
+
+if grep -q 'build-arg MAKE_LS_VERSION="${MAKE_LS_VERSION' "$BUILD_SH"; then
+    pass "--build-arg MAKE_LS_VERSION uses \${MAKE_LS_VERSION:-...} in build.sh"
+else
+    fail "--build-arg MAKE_LS_VERSION does not use \${MAKE_LS_VERSION:-...} in build.sh"
 fi
 
 echo ""
