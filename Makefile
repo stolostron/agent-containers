@@ -9,16 +9,16 @@ AC_DEFAULTS := $(firstword $(wildcard ../agent-swarm/.push-defaults) .push-defau
 IMAGES := opencode
 
 # Toolchain versions — update all with: make update-deps
-GO_VERSION       ?= 1.26.4
+GO_VERSION       ?= 1.26.5
 PYTHON_VERSION   ?= 3.14.6
-PYTHON_BUILD     ?= 20260623
-OPENCODE_VERSION ?= 1.17.14
+PYTHON_BUILD     ?= 20260728
+OPENCODE_VERSION ?= 1.18.9
 GH_VERSION       ?= 2.96.0
-FZF_VERSION      ?= 0.74.0
-RG_VERSION       ?= 15.1.0
+FZF_VERSION      ?= 0.74.1
+RG_VERSION       ?= 15.2.0
 YQ_VERSION       ?= 4.53.3
-JIRA_MCP_VERSION ?= 0.1.0
-GOPLS_VERSION    ?= 0.22.0
+JIRA_MCP_VERSION ?= 0.2.1
+GOPLS_VERSION    ?= 0.23.0
 PYRIGHT_VERSION  ?= 1.1.411
 
 # Per-image build targets
@@ -111,7 +111,7 @@ update-deps:  ## Fetch latest versions of all dependencies and update Makefile
 	$(eval LATEST_GO := $(shell curl -fsSL 'https://go.dev/dl/?mode=json' | jq -r '.[0].version' | sed 's/go//'))
 	$(eval LATEST_BUILD := $(shell curl -fsSL 'https://api.github.com/repos/indygreg/python-build-standalone/releases?per_page=5' | jq -r '[.[] | select(.prerelease == false and .draft == false)][0].tag_name'))
 	$(eval LATEST_PY := $(shell curl -fsSL 'https://api.github.com/repos/indygreg/python-build-standalone/releases/tags/$(LATEST_BUILD)' | jq -r '.assets[].name' | grep -oP 'cpython-\K[0-9]+\.[0-9]+\.[0-9]+(?=\+.*x86_64-unknown-linux-gnu-install_only\.tar\.gz)' | sort -V | tail -1))
-	$(eval LATEST_OC := $(shell npm view opencode-ai version))
+	$(eval LATEST_OC := $(shell curl -fsSL 'https://registry.npmjs.org/opencode-ai/latest' | jq -r '.version'))
 	$(eval LATEST_GH := $(shell curl -fsSL 'https://api.github.com/repos/cli/cli/releases?per_page=5' | jq -r '[.[] | select(.prerelease == false and .draft == false)][0].tag_name | ltrimstr("v")'))
 	$(eval LATEST_FZF := $(shell curl -fsSL 'https://api.github.com/repos/junegunn/fzf/releases?per_page=5' | jq -r '[.[] | select(.prerelease == false and .draft == false)][0].tag_name | ltrimstr("v")'))
 	$(eval LATEST_RG := $(shell curl -fsSL 'https://api.github.com/repos/BurntSushi/ripgrep/releases?per_page=5' | jq -r '[.[] | select(.prerelease == false and .draft == false)][0].tag_name'))
@@ -119,6 +119,17 @@ update-deps:  ## Fetch latest versions of all dependencies and update Makefile
 	$(eval LATEST_JIRA_MCP := $(shell curl -fsSL 'https://api.github.com/repos/stolostron/jira-mcp-server/releases?per_page=5' | jq -r '[.[] | select(.prerelease == false and .draft == false)][0].tag_name | ltrimstr("v")'))
 	$(eval LATEST_GOPLS := $(shell curl -fsSL 'https://api.github.com/repos/golang/tools/releases' | jq -r '[.[] | select(.tag_name | startswith("gopls/"))][0].tag_name | ltrimstr("gopls/v")'))
 	$(eval LATEST_PYRIGHT := $(shell curl -fsSL 'https://pypi.org/pypi/pyright/json' | jq -r '.info.version'))
+	$(if $(strip $(LATEST_GO)),,$(error Failed to fetch latest Go version - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_BUILD)),,$(error Failed to fetch latest Python build tag - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_PY)),,$(error Failed to fetch latest Python version - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_OC)),,$(error Failed to fetch latest opencode-ai version - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_GH)),,$(error Failed to fetch latest gh version - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_FZF)),,$(error Failed to fetch latest fzf version - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_RG)),,$(error Failed to fetch latest ripgrep version - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_YQ)),,$(error Failed to fetch latest yq version - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_JIRA_MCP)),,$(error Failed to fetch latest jira-mcp-server version - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_GOPLS)),,$(error Failed to fetch latest gopls version - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_PYRIGHT)),,$(error Failed to fetch latest pyright version - aborting without modifying Makefile))
 	@echo "Go: $(LATEST_GO)  Python: $(LATEST_PY) (build: $(LATEST_BUILD))  opencode: $(LATEST_OC)  gh: $(LATEST_GH)  fzf: $(LATEST_FZF)  rg: $(LATEST_RG)  yq: $(LATEST_YQ)  jira-mcp: $(LATEST_JIRA_MCP)  gopls: $(LATEST_GOPLS)  pyright: $(LATEST_PYRIGHT)"
 	@sed -i 's/^GO_VERSION\s*?= .*/GO_VERSION       ?= $(LATEST_GO)/' Makefile
 	@sed -i 's/^PYTHON_VERSION\s*?= .*/PYTHON_VERSION   ?= $(LATEST_PY)/' Makefile

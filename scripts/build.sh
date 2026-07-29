@@ -60,17 +60,17 @@ echo ""
 echo "Building ${FULL_IMAGE} ..."
 podman build \
   -f "${REPO_ROOT}/${CONTAINERFILE}" \
-  --build-arg GH_VERSION="${GH_VERSION:-2.94.0}" \
-  --build-arg GO_VERSION="${GO_VERSION:-1.26.4}" \
-  --build-arg OPENCODE_VERSION="${OPENCODE_VERSION:-1.17.7}" \
+  --build-arg GH_VERSION="${GH_VERSION:-2.96.0}" \
+  --build-arg GO_VERSION="${GO_VERSION:-1.26.5}" \
+  --build-arg OPENCODE_VERSION="${OPENCODE_VERSION:-1.18.9}" \
   --build-arg PYTHON_VERSION="${PYTHON_VERSION:-3.14.6}" \
-  --build-arg PYTHON_BUILD="${PYTHON_BUILD:-20260610}" \
-  --build-arg FZF_VERSION="${FZF_VERSION:-0.73.1}" \
-  --build-arg RG_VERSION="${RG_VERSION:-15.1.0}" \
+  --build-arg PYTHON_BUILD="${PYTHON_BUILD:-20260728}" \
+  --build-arg FZF_VERSION="${FZF_VERSION:-0.74.1}" \
+  --build-arg RG_VERSION="${RG_VERSION:-15.2.0}" \
   --build-arg YQ_VERSION="${YQ_VERSION:-4.53.3}" \
-  --build-arg JIRA_MCP_VERSION="${JIRA_MCP_VERSION:-0.1.0}" \
-  --build-arg GOPLS_VERSION="${GOPLS_VERSION:-0.22.0}" \
-  --build-arg PYRIGHT_VERSION="${PYRIGHT_VERSION:-1.1.410}" \
+  --build-arg JIRA_MCP_VERSION="${JIRA_MCP_VERSION:-0.2.1}" \
+  --build-arg GOPLS_VERSION="${GOPLS_VERSION:-0.23.0}" \
+  --build-arg PYRIGHT_VERSION="${PYRIGHT_VERSION:-1.1.411}" \
   --target "${IMAGE_NAME}" \
   -t "${FULL_IMAGE}" \
   "${REPO_ROOT}"
