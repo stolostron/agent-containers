@@ -17,11 +17,13 @@ spec:
             secretKeyRef:
               name: opencode-secret
               key: GOOGLE_CLOUD_PROJECT
+              optional: true
         - name: VERTEX_LOCATION
           valueFrom:
             secretKeyRef:
               name: opencode-secret
               key: VERTEX_LOCATION
+              optional: true
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: /app/gcloud/credentials.json
         # Gemini via Google API key
@@ -30,6 +32,14 @@ spec:
             secretKeyRef:
               name: opencode-secret
               key: GOOGLE_API_KEY
+              optional: true
+        # OpenAI API (optional)
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: opencode-secret
+              key: OPENAI_API_KEY
+              optional: true
         # GitHub PAT for git HTTPS auth (optional)
         - name: GITHUB_PAT
           valueFrom:
@@ -54,6 +64,7 @@ spec:
     - name: gcloud-creds
       secret:
         secretName: opencode-secret
+        optional: true
         items:
           - key: application_default_credentials.json
             path: credentials.json

@@ -13,7 +13,9 @@ EXTRA_ARGS=("$@")  # any remaining args passed to opencode (e.g. --continue)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AC_DEFAULTS="${SCRIPT_DIR}/../../agent-swarm/.push-defaults"
-if [[ -f "$AC_DEFAULTS" ]]; then
+if [[ -n "${DEFAULTS_FILE:-}" ]]; then
+    :
+elif [[ -f "$AC_DEFAULTS" ]]; then
     DEFAULTS_FILE="$AC_DEFAULTS"
 else
     DEFAULTS_FILE="${SCRIPT_DIR}/../.push-defaults"
@@ -33,19 +35,6 @@ if [[ -z "$REGISTRY" ]]; then
     echo "Error: REGISTRY not set in .push-defaults. Run a build target first." >&2
     exit 1
 fi
-
-# Extract a key from a JSON podman secret (compatible with podman < 4.7)
-secret_val() {
-    local secret_name="$1" key="$2"
-    local secrets_dir="${XDG_DATA_HOME:-${HOME}/.local/share}/containers/storage/secrets"
-    local id
-    id=$(jq -r --arg n "$secret_name" \
-        '.secrets[] | select(.name == $n) | .id' \
-        "${secrets_dir}/secrets.json")
-    jq -r --arg id "$id" '.[$id]' \
-        "${secrets_dir}/filedriver/secretsdata.json" \
-        | base64 -d | jq -r ".\"${key}\""
-}
 
 # Extract a key that may be absent — returns empty string instead of error
 optional_secret_val() {
@@ -72,30 +61,48 @@ opencode)
         echo "Available secrets:" >&2
         podman secret ls >&2
         echo "" >&2
-        echo "To create '${SECRET}': make create-opencode-secret PROJECT_ID=xxx REGION=xxx GOOGLE_API_KEY=xxx" >&2
+        echo "To create '${SECRET}': copy the secret template, fill in its values, and run make create-opencode-secret" >&2
         exit 1
     fi
 
-    PROJECT_ID=$(    secret_val "$SECRET" GOOGLE_CLOUD_PROJECT)
-    REGION=$(        secret_val "$SECRET" VERTEX_LOCATION)
-    CREDS=$(         secret_val "$SECRET" "application_default_credentials.json")
-    GOOGLE_API_KEY=$(secret_val "$SECRET" GOOGLE_API_KEY)
+    PROJECT_ID=$(    optional_secret_val "$SECRET" GOOGLE_CLOUD_PROJECT)
+    REGION=$(        optional_secret_val "$SECRET" VERTEX_LOCATION)
+    CREDS=$(         optional_secret_val "$SECRET" "application_default_credentials.json")
+    GOOGLE_API_KEY=$(optional_secret_val "$SECRET" GOOGLE_API_KEY)
+    OPENAI_API_KEY=$(optional_secret_val "$SECRET" OPENAI_API_KEY)
     GITHUB_PAT=$(    optional_secret_val "$SECRET" GITHUB_PAT)
 
-    # Write credentials to a temp file mounted into the container
-    TMPDIR=$(mktemp -d)
-    trap 'rm -rf "$TMPDIR"' EXIT
-    printf '%s' "$CREDS" > "${TMPDIR}/credentials.json"
+    if [[ -n "$PROJECT_ID$REGION$CREDS" ]]; then
+        if [[ -z "$PROJECT_ID" || -z "$REGION" || -z "$CREDS" ]]; then
+            echo "Error: Vertex AI requires GOOGLE_CLOUD_PROJECT, VERTEX_LOCATION, and ADC credentials." >&2
+            exit 1
+        fi
+    fi
+
+    if [[ -z "$PROJECT_ID$REGION$CREDS$GOOGLE_API_KEY$OPENAI_API_KEY" ]]; then
+        echo "Error: no provider credentials found in '${SECRET}'." >&2
+        echo "Configure Vertex AI, GOOGLE_API_KEY, or OPENAI_API_KEY." >&2
+        exit 1
+    fi
 
     COMMON_ARGS=(
         --name "$TYPE"
-        -e "GOOGLE_CLOUD_PROJECT=${PROJECT_ID}"
-        -e "VERTEX_LOCATION=${REGION}"
-        -e GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud/credentials.json
-        -e "GOOGLE_API_KEY=${GOOGLE_API_KEY}"
-        -v "${TMPDIR}/credentials.json:/app/gcloud/credentials.json:ro,Z"
         -v "opencode-local:/home/node/.local:Z,U"
     )
+    if [[ -n "$CREDS" ]]; then
+        # Write Vertex credentials to a temporary file mounted into the container.
+        TMPDIR=$(mktemp -d)
+        trap 'rm -rf "$TMPDIR"' EXIT
+        printf '%s' "$CREDS" > "${TMPDIR}/credentials.json"
+        COMMON_ARGS+=(
+            -e "GOOGLE_CLOUD_PROJECT=${PROJECT_ID}"
+            -e "VERTEX_LOCATION=${REGION}"
+            -e GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud/credentials.json
+            -v "${TMPDIR}/credentials.json:/app/gcloud/credentials.json:ro,Z"
+        )
+    fi
+    [[ -n "$GOOGLE_API_KEY" ]] && COMMON_ARGS+=(-e "GOOGLE_API_KEY=${GOOGLE_API_KEY}")
+    [[ -n "$OPENAI_API_KEY" ]] && COMMON_ARGS+=(-e "OPENAI_API_KEY=${OPENAI_API_KEY}")
     [[ -n "$GITHUB_PAT" ]] && COMMON_ARGS+=(-e "GITHUB_PAT=${GITHUB_PAT}")
 
     echo ""

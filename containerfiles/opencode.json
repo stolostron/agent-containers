@@ -1,5 +1,5 @@
 {
-  "enabled_providers": ["google-vertex-anthropic", "google"],
+  "enabled_providers": ["google-vertex-anthropic", "google", "openai"],
   "lsp": {
     "go": {
       "command": ["gopls"]

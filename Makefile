@@ -9,14 +9,14 @@ AC_DEFAULTS := $(firstword $(wildcard ../agent-swarm/.push-defaults) .push-defau
 IMAGES := opencode
 
 # Toolchain versions — update all with: make update-deps
-GO_VERSION       ?= 1.26.5
-PYTHON_VERSION   ?= 3.14.6
-PYTHON_BUILD     ?= 20260728
-OPENCODE_VERSION ?= 1.18.9
-GH_VERSION       ?= 2.96.0
-FZF_VERSION      ?= 0.74.1
+GO_VERSION       ?= 1.27.0
+PYTHON_VERSION   ?= 3.14.7
+PYTHON_BUILD     ?= 20260825
+OPENCODE_VERSION ?= 1.18.25
+GH_VERSION       ?= 2.98.0
+FZF_VERSION      ?= 0.74.3
 RG_VERSION       ?= 15.2.0
-YQ_VERSION       ?= 4.53.3
+YQ_VERSION       ?= 4.53.6
 JIRA_MCP_VERSION ?= 0.2.1
 GOPLS_VERSION    ?= 0.23.0
 PYRIGHT_VERSION  ?= 1.1.411
