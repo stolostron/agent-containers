@@ -149,14 +149,18 @@ RUN set -ex; \
     && jira-mcp-server --help | head -5
 
 # Install LSP servers (gopls for Go, pyright for Python) — versions pinned via ARGs
-RUN /usr/local/go/bin/go install golang.org/x/tools/gopls@v${GOPLS_VERSION}
+RUN GOMODCACHE=/tmp/go-mod GOCACHE=/tmp/go-build \
+    /usr/local/go/bin/go install golang.org/x/tools/gopls@v${GOPLS_VERSION} \
+    && rm -rf /tmp/go-mod /tmp/go-build
 ENV PATH=$PATH:/home/node/go/bin
 RUN python3 -m pip install --no-cache-dir pyright==${PYRIGHT_VERSION}
 
 # CVE scanners are installed in shared system paths so both node and sandbox
 # can run project-scoped audits without installing scanner dependencies at runtime.
-RUN GOBIN=/usr/local/bin /usr/local/go/bin/go install golang.org/x/vuln/cmd/govulncheck@v${GOVULNCHECK_VERSION} \
-    && /usr/local/bin/govulncheck -version
+RUN GOMODCACHE=/tmp/go-mod GOCACHE=/tmp/go-build \
+    GOBIN=/usr/local/bin /usr/local/go/bin/go install golang.org/x/vuln/cmd/govulncheck@v${GOVULNCHECK_VERSION} \
+    && /usr/local/bin/govulncheck -version \
+    && rm -rf /tmp/go-mod /tmp/go-build
 RUN python3 -m pip install --no-cache-dir pip-audit==${PIP_AUDIT_VERSION} \
     && pip-audit --version
 

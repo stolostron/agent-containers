@@ -123,7 +123,7 @@ update-deps:  ## Fetch latest versions of all dependencies and update Makefile
 	$(eval LATEST_JIRA_MCP := $(shell curl -fsSL 'https://api.github.com/repos/stolostron/jira-mcp-server/releases?per_page=5' | jq -r '[.[] | select(.prerelease == false and .draft == false)][0].tag_name // empty | ltrimstr("v")'))
 	$(eval LATEST_GOPLS := $(shell curl -fsSL 'https://api.github.com/repos/golang/tools/releases' | jq -r '[.[] | select(.tag_name | startswith("gopls/"))][0].tag_name // empty | ltrimstr("gopls/v")'))
 	$(eval LATEST_PYRIGHT := $(shell curl -fsSL 'https://pypi.org/pypi/pyright/json' | jq -r '.info.version // empty'))
-	$(eval LATEST_PIP_AUDIT := $(shell curl -fsSL 'https://pypi.org/pypi/pip-audit/json' | jq -r '[.releases | keys[] | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$$"))] | sort | last // empty'))
+	$(eval LATEST_PIP_AUDIT := $(shell curl -fsSL 'https://pypi.org/pypi/pip-audit/json' | jq -r '[.releases | keys[] | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$$"))] | sort_by(split(".") | map(tonumber)) | last // empty'))
 	$(eval LATEST_GOVULNCHECK := $(shell curl -fsSL 'https://proxy.golang.org/golang.org/x/vuln/@latest' | jq -r '.Version // empty' | sed 's/^v//'))
 	$(if $(strip $(LATEST_GO)),,$(error Failed to fetch latest Go version - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_BUILD)),,$(error Failed to fetch latest Python build tag - aborting without modifying Makefile))
