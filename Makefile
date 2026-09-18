@@ -12,14 +12,16 @@ IMAGES := opencode
 GO_VERSION       ?= 1.27.1
 PYTHON_VERSION   ?= 3.14.7
 PYTHON_BUILD     ?= 20260901
-OPENCODE_VERSION ?= 1.18.29
-GH_VERSION       ?= 2.100.0
-FZF_VERSION      ?= 0.74.3
+OPENCODE_VERSION ?= 1.18.31
+GH_VERSION       ?= 2.101.0
+FZF_VERSION      ?= 0.74.4
 RG_VERSION       ?= 15.2.0
 YQ_VERSION       ?= 4.53.6
 JIRA_MCP_VERSION ?= 0.2.1
 GOPLS_VERSION    ?= 0.23.0
-PYRIGHT_VERSION  ?= 1.1.411
+PYRIGHT_VERSION  ?= 1.1.414
+PIP_AUDIT_VERSION ?= 2.9.0
+GOVULNCHECK_VERSION ?= 1.8.0
 
 # Per-image build targets
 TARGET_opencode := opencode
@@ -55,6 +57,8 @@ build-$(1):
 	 JIRA_MCP_VERSION=$(JIRA_MCP_VERSION) \
 	 GOPLS_VERSION=$(GOPLS_VERSION) \
 	 PYRIGHT_VERSION=$(PYRIGHT_VERSION) \
+	 PIP_AUDIT_VERSION=$(PIP_AUDIT_VERSION) \
+	 GOVULNCHECK_VERSION=$(GOVULNCHECK_VERSION) \
 	 NOPROMPT=$(NOPROMPT) \
 	 bash scripts/build.sh $(1) $(CONTAINERFILE)
 push-$(1):
@@ -119,6 +123,8 @@ update-deps:  ## Fetch latest versions of all dependencies and update Makefile
 	$(eval LATEST_JIRA_MCP := $(shell curl -fsSL 'https://api.github.com/repos/stolostron/jira-mcp-server/releases?per_page=5' | jq -r '[.[] | select(.prerelease == false and .draft == false)][0].tag_name // empty | ltrimstr("v")'))
 	$(eval LATEST_GOPLS := $(shell curl -fsSL 'https://api.github.com/repos/golang/tools/releases' | jq -r '[.[] | select(.tag_name | startswith("gopls/"))][0].tag_name // empty | ltrimstr("gopls/v")'))
 	$(eval LATEST_PYRIGHT := $(shell curl -fsSL 'https://pypi.org/pypi/pyright/json' | jq -r '.info.version // empty'))
+	$(eval LATEST_PIP_AUDIT := $(shell curl -fsSL 'https://pypi.org/pypi/pip-audit/json' | jq -r '[.releases | keys[] | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$$"))] | sort | last // empty'))
+	$(eval LATEST_GOVULNCHECK := $(shell curl -fsSL 'https://proxy.golang.org/golang.org/x/vuln/@latest' | jq -r '.Version // empty' | sed 's/^v//'))
 	$(if $(strip $(LATEST_GO)),,$(error Failed to fetch latest Go version - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_BUILD)),,$(error Failed to fetch latest Python build tag - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_PY)),,$(error Failed to fetch latest Python version - aborting without modifying Makefile))
@@ -130,18 +136,14 @@ update-deps:  ## Fetch latest versions of all dependencies and update Makefile
 	$(if $(strip $(LATEST_JIRA_MCP)),,$(error Failed to fetch latest jira-mcp-server version - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_GOPLS)),,$(error Failed to fetch latest gopls version - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_PYRIGHT)),,$(error Failed to fetch latest pyright version - aborting without modifying Makefile))
-	@echo "Go: $(LATEST_GO)  Python: $(LATEST_PY) (build: $(LATEST_BUILD))  opencode: $(LATEST_OC)  gh: $(LATEST_GH)  fzf: $(LATEST_FZF)  rg: $(LATEST_RG)  yq: $(LATEST_YQ)  jira-mcp: $(LATEST_JIRA_MCP)  gopls: $(LATEST_GOPLS)  pyright: $(LATEST_PYRIGHT)"
-	@sed -i 's/^GO_VERSION\s*?= .*/GO_VERSION       ?= $(LATEST_GO)/' Makefile
-	@sed -i 's/^PYTHON_VERSION\s*?= .*/PYTHON_VERSION   ?= $(LATEST_PY)/' Makefile
-	@sed -i 's/^PYTHON_BUILD\s*?= .*/PYTHON_BUILD     ?= $(LATEST_BUILD)/' Makefile
-	@sed -i 's/^OPENCODE_VERSION\s*?= .*/OPENCODE_VERSION ?= $(LATEST_OC)/' Makefile
-	@sed -i 's/^GH_VERSION\s*?= .*/GH_VERSION       ?= $(LATEST_GH)/' Makefile
-	@sed -i 's/^FZF_VERSION\s*?= .*/FZF_VERSION      ?= $(LATEST_FZF)/' Makefile
-	@sed -i 's/^RG_VERSION\s*?= .*/RG_VERSION       ?= $(LATEST_RG)/' Makefile
-	@sed -i 's/^YQ_VERSION\s*?= .*/YQ_VERSION       ?= $(LATEST_YQ)/' Makefile
-	@sed -i 's/^JIRA_MCP_VERSION\s*?= .*/JIRA_MCP_VERSION ?= $(LATEST_JIRA_MCP)/' Makefile
-	@sed -i 's/^GOPLS_VERSION\s*?= .*/GOPLS_VERSION    ?= $(LATEST_GOPLS)/' Makefile
-	@sed -i 's/^PYRIGHT_VERSION\s*?= .*/PYRIGHT_VERSION  ?= $(LATEST_PYRIGHT)/' Makefile
+	$(if $(strip $(LATEST_PIP_AUDIT)),,$(error Failed to fetch latest pip-audit version - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_GOVULNCHECK)),,$(error Failed to fetch latest govulncheck version - aborting without modifying Makefile))
+	@echo "Go: $(LATEST_GO)  Python: $(LATEST_PY) (build: $(LATEST_BUILD))  opencode: $(LATEST_OC)  gh: $(LATEST_GH)  fzf: $(LATEST_FZF)  rg: $(LATEST_RG)  yq: $(LATEST_YQ)  jira-mcp: $(LATEST_JIRA_MCP)  gopls: $(LATEST_GOPLS)  pyright: $(LATEST_PYRIGHT)  pip-audit: $(LATEST_PIP_AUDIT)  govulncheck: $(LATEST_GOVULNCHECK)"
+	@set -eu; tmpfile=$$(mktemp Makefile.XXXXXX); trap 'rm -f "$$tmpfile"' EXIT; \
+		cp Makefile "$$tmpfile"; \
+		sed -i 's/^GO_VERSION\s*?= .*/GO_VERSION       ?= $(LATEST_GO)/; s/^PYTHON_VERSION\s*?= .*/PYTHON_VERSION   ?= $(LATEST_PY)/; s/^PYTHON_BUILD\s*?= .*/PYTHON_BUILD     ?= $(LATEST_BUILD)/; s/^OPENCODE_VERSION\s*?= .*/OPENCODE_VERSION ?= $(LATEST_OC)/; s/^GH_VERSION\s*?= .*/GH_VERSION       ?= $(LATEST_GH)/; s/^FZF_VERSION\s*?= .*/FZF_VERSION      ?= $(LATEST_FZF)/; s/^RG_VERSION\s*?= .*/RG_VERSION       ?= $(LATEST_RG)/; s/^YQ_VERSION\s*?= .*/YQ_VERSION       ?= $(LATEST_YQ)/; s/^JIRA_MCP_VERSION\s*?= .*/JIRA_MCP_VERSION ?= $(LATEST_JIRA_MCP)/; s/^GOPLS_VERSION\s*?= .*/GOPLS_VERSION    ?= $(LATEST_GOPLS)/; s/^PYRIGHT_VERSION\s*?= .*/PYRIGHT_VERSION  ?= $(LATEST_PYRIGHT)/; s/^PIP_AUDIT_VERSION\s*?= .*/PIP_AUDIT_VERSION ?= $(LATEST_PIP_AUDIT)/; s/^GOVULNCHECK_VERSION\s*?= .*/GOVULNCHECK_VERSION ?= $(LATEST_GOVULNCHECK)/' "$$tmpfile"; \
+		grep -q '^PIP_AUDIT_VERSION\s*?=' "$$tmpfile" && grep -q '^GOVULNCHECK_VERSION\s*?=' "$$tmpfile"; \
+		mv "$$tmpfile" Makefile; trap - EXIT
 
 .PHONY: set-image-tag
 set-image-tag:  ## Set IMAGE_TAG in $(AC_DEFAULTS) (usage: make set-image-tag IMAGE_TAG=0.3.2)

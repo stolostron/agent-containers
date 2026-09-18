@@ -71,6 +71,8 @@ podman build \
   --build-arg JIRA_MCP_VERSION="${JIRA_MCP_VERSION:-0.2.1}" \
   --build-arg GOPLS_VERSION="${GOPLS_VERSION:-0.23.0}" \
   --build-arg PYRIGHT_VERSION="${PYRIGHT_VERSION:-1.1.411}" \
+  --build-arg PIP_AUDIT_VERSION="${PIP_AUDIT_VERSION:-2.9.0}" \
+  --build-arg GOVULNCHECK_VERSION="${GOVULNCHECK_VERSION:-1.8.0}" \
   --target "${IMAGE_NAME}" \
   -t "${FULL_IMAGE}" \
   "${REPO_ROOT}"
