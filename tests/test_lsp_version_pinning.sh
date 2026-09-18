@@ -65,6 +65,14 @@ else
     fail "PYRIGHT_VERSION ARG not re-declared in base-runtimes stage"
 fi
 
+for scanner in PIP_AUDIT GOVULNCHECK; do
+    if echo "$_base_runtimes_args" | grep -qP "^ARG ${scanner}_VERSION"; then
+        pass "${scanner}_VERSION ARG re-declared in base-runtimes stage"
+    else
+        fail "${scanner}_VERSION ARG not re-declared in base-runtimes stage"
+    fi
+done
+
 # Default values must be set (version pinned)
 if grep -qP '^ARG GOPLS_VERSION=\d' "$CONTAINERFILE"; then
     pass "GOPLS_VERSION has a default value pinned"
@@ -76,6 +84,26 @@ if grep -qP '^ARG PYRIGHT_VERSION=\d' "$CONTAINERFILE"; then
     pass "PYRIGHT_VERSION has a default value pinned"
 else
     fail "PYRIGHT_VERSION has no default value (not pinned)"
+fi
+
+for scanner in PIP_AUDIT GOVULNCHECK; do
+    if grep -qP "^ARG ${scanner}_VERSION=" "$CONTAINERFILE"; then
+        pass "${scanner}_VERSION has a default value pinned"
+    else
+        fail "${scanner}_VERSION has no Containerfile pin"
+    fi
+done
+
+if grep -qF 'govulncheck@v${GOVULNCHECK_VERSION}' "$CONTAINERFILE" && grep -qF '/usr/local/bin/govulncheck -version' "$CONTAINERFILE"; then
+    pass "govulncheck install and build-time validation are pinned"
+else
+    fail "govulncheck install or build-time validation is not pinned"
+fi
+
+if grep -qF 'pip-audit==${PIP_AUDIT_VERSION}' "$CONTAINERFILE" && grep -qF 'pip-audit --version' "$CONTAINERFILE"; then
+    pass "pip-audit install and build-time validation are pinned"
+else
+    fail "pip-audit install or build-time validation is not pinned"
 fi
 
 echo ""
@@ -96,6 +124,19 @@ if grep -qP '^PYRIGHT_VERSION\s+\?=' "$MAKEFILE"; then
 else
     fail "PYRIGHT_VERSION variable not declared in Makefile"
 fi
+
+for scanner in PIP_AUDIT GOVULNCHECK; do
+    if grep -qP "^${scanner}_VERSION\s+\?=" "$MAKEFILE"; then
+        pass "${scanner}_VERSION variable declared in Makefile"
+    else
+        fail "${scanner}_VERSION variable not declared in Makefile"
+    fi
+    if grep -qF "${scanner}_VERSION=\$(${scanner}_VERSION)" "$MAKEFILE"; then
+        pass "${scanner}_VERSION passed to build.sh in Makefile"
+    else
+        fail "${scanner}_VERSION not passed to build.sh in Makefile"
+    fi
+done
 
 # GOPLS_VERSION passed to build.sh invocation
 if grep -qP 'GOPLS_VERSION=\$\(GOPLS_VERSION\)' "$MAKEFILE"; then
@@ -142,6 +183,26 @@ else
     fail "update-deps does not sed-update PYRIGHT_VERSION"
 fi
 
+for scanner in PIP_AUDIT GOVULNCHECK; do
+    latest="LATEST_${scanner}"
+    if grep -qP "${latest}\s*:=" "$MAKEFILE"; then
+        pass "update-deps fetches ${latest}"
+    else
+        fail "update-deps does not fetch ${latest}"
+    fi
+    if grep -qP "sed.*${scanner}_VERSION.*${latest}" "$MAKEFILE"; then
+        pass "update-deps sed-updates ${scanner}_VERSION in Makefile"
+    else
+        fail "update-deps does not sed-update ${scanner}_VERSION"
+    fi
+done
+
+if grep -qF 'mktemp Makefile.' "$MAKEFILE" && grep -qF 'mv "$$tmpfile" Makefile' "$MAKEFILE"; then
+    pass "update-deps applies substitutions through an atomic temporary file"
+else
+    fail "update-deps does not use an atomic temporary file"
+fi
+
 echo ""
 
 # --------------------------------------------------------------------------
@@ -172,6 +233,39 @@ if grep -q 'build-arg PYRIGHT_VERSION="${PYRIGHT_VERSION' "$BUILD_SH"; then
     pass "--build-arg PYRIGHT_VERSION uses \${PYRIGHT_VERSION:-...} in build.sh"
 else
     fail "--build-arg PYRIGHT_VERSION does not use \${PYRIGHT_VERSION:-...} in build.sh"
+fi
+
+for scanner in PIP_AUDIT GOVULNCHECK; do
+    if grep -qP "\-\-build-arg ${scanner}_VERSION=" "$BUILD_SH" && grep -q "build-arg ${scanner}_VERSION=\"\${${scanner}_VERSION" "$BUILD_SH"; then
+        pass "build.sh passes ${scanner}_VERSION from the environment"
+    else
+        fail "build.sh does not pass ${scanner}_VERSION from the environment"
+    fi
+done
+
+echo ""
+
+# --------------------------------------------------------------------------
+# Runtime availability checks
+# --------------------------------------------------------------------------
+echo "-- Runtime availability --"
+
+if grep -qF 'GOBIN=/usr/local/bin' "$CONTAINERFILE" && grep -qF '/usr/local/bin/govulncheck' "$CONTAINERFILE"; then
+    pass "govulncheck is installed in a shared system executable path"
+else
+    fail "govulncheck is not installed in a shared system executable path"
+fi
+
+if ! grep -qF 'ENV GOPATH=' "$CONTAINERFILE" && grep -qF 'GOPATH=/home/node/go' "$CONTAINERFILE"; then
+    pass "runtime Go caches use per-user defaults and gopls remains on its persistent path"
+else
+    fail "runtime Go cache configuration uses a shared GOPATH"
+fi
+
+if grep -qF 'usable by both `node` and' "${REPO_ROOT}/docs/CVE_SCANNERS.md"; then
+    pass "scanner availability for node and sandbox is documented"
+else
+    fail "scanner availability for node and sandbox is not documented"
 fi
 
 echo ""

@@ -8,6 +8,8 @@ ARG PYTHON_BUILD=20260610
 ARG JIRA_MCP_VERSION=0.1.0
 ARG GOPLS_VERSION=0.22.0
 ARG PYRIGHT_VERSION=1.1.410
+ARG PIP_AUDIT_VERSION=2.10.1
+ARG GOVULNCHECK_VERSION=1.8.0
 
 # ---- Stage 1: Base tools (shared by all agents) ----
 FROM registry.access.redhat.com/ubi10/nodejs-24 AS base-tools
@@ -108,6 +110,8 @@ ARG PYTHON_VERSION
 ARG PYTHON_BUILD
 ARG GOPLS_VERSION
 ARG PYRIGHT_VERSION
+ARG PIP_AUDIT_VERSION
+ARG GOVULNCHECK_VERSION
 USER root
 
 RUN set -ex; \
@@ -121,7 +125,6 @@ RUN set -ex; \
         | tar -xz -C /usr/local; \
     /usr/local/go/bin/go version
 ENV PATH=$PATH:/usr/local/go/bin
-ENV GOPATH=/home/node/go
 
 RUN set -ex; \
     ARCH_RAW=$(uname -m); \
@@ -145,9 +148,21 @@ RUN set -ex; \
     && jira-mcp-server --help | head -5
 
 # Install LSP servers (gopls for Go, pyright for Python) — versions pinned via ARGs
-RUN /usr/local/go/bin/go install golang.org/x/tools/gopls@v${GOPLS_VERSION}
+RUN GOMODCACHE=/tmp/go-mod GOCACHE=/tmp/go-build \
+    GOPATH=/home/node/go \
+    /usr/local/go/bin/go install golang.org/x/tools/gopls@v${GOPLS_VERSION} \
+    && rm -rf /tmp/go-mod /tmp/go-build
 ENV PATH=$PATH:/home/node/go/bin
 RUN python3 -m pip install --no-cache-dir pyright==${PYRIGHT_VERSION}
+
+# CVE scanners are installed in shared system paths so both node and sandbox
+# can run project-scoped audits without installing scanner dependencies at runtime.
+RUN GOMODCACHE=/tmp/go-mod GOCACHE=/tmp/go-build \
+    GOBIN=/usr/local/bin /usr/local/go/bin/go install golang.org/x/vuln/cmd/govulncheck@v${GOVULNCHECK_VERSION} \
+    && /usr/local/bin/govulncheck -version \
+    && rm -rf /tmp/go-mod /tmp/go-build
+RUN python3 -m pip install --no-cache-dir pip-audit==${PIP_AUDIT_VERSION} \
+    && pip-audit --version
 
 # GitHub App auth — transparent gh/git when credentials are mounted at runtime.
 # Upstream: server-foundation-agent/build/scripts (kubeopencode/devbox pattern).
