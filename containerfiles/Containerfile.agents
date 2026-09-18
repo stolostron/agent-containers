@@ -125,7 +125,6 @@ RUN set -ex; \
         | tar -xz -C /usr/local; \
     /usr/local/go/bin/go version
 ENV PATH=$PATH:/usr/local/go/bin
-ENV GOPATH=/home/node/go
 
 RUN set -ex; \
     ARCH_RAW=$(uname -m); \
@@ -150,6 +149,7 @@ RUN set -ex; \
 
 # Install LSP servers (gopls for Go, pyright for Python) — versions pinned via ARGs
 RUN GOMODCACHE=/tmp/go-mod GOCACHE=/tmp/go-build \
+    GOPATH=/home/node/go \
     /usr/local/go/bin/go install golang.org/x/tools/gopls@v${GOPLS_VERSION} \
     && rm -rf /tmp/go-mod /tmp/go-build
 ENV PATH=$PATH:/home/node/go/bin

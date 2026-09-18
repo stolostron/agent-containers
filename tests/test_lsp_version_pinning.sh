@@ -256,6 +256,12 @@ else
     fail "govulncheck is not installed in a shared system executable path"
 fi
 
+if ! grep -qF 'ENV GOPATH=' "$CONTAINERFILE" && grep -qF 'GOPATH=/home/node/go' "$CONTAINERFILE"; then
+    pass "runtime Go caches use per-user defaults and build installs use an explicit GOPATH"
+else
+    fail "runtime Go cache configuration uses a shared GOPATH"
+fi
+
 if grep -qF 'usable by both `node` and' "${REPO_ROOT}/docs/CVE_SCANNERS.md"; then
     pass "scanner availability for node and sandbox is documented"
 else

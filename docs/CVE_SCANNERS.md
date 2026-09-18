@@ -4,6 +4,11 @@ The image preinstalls pinned versions of `pip-audit` and `govulncheck`. The
 executables are installed in `/usr/local/bin` and are usable by both `node` and
 `sandbox` without installing scanner dependencies during an audit.
 
+Go runtime caching uses each user's persistent default paths under their home
+directory. The image does not set a shared `GOPATH` or rely on `/tmp` for
+runtime scans, so uncached `govulncheck` module downloads remain writable for
+both `node` and `sandbox` after image setup.
+
 ## Native Commands
 
 Run audits against the repository being assessed, not the image's global
