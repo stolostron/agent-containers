@@ -256,8 +256,10 @@ else
     fail "govulncheck is not installed in a shared system executable path"
 fi
 
-if ! grep -qF 'ENV GOPATH=' "$CONTAINERFILE" && grep -qF 'GOPATH=/home/node/go' "$CONTAINERFILE"; then
-    pass "runtime Go caches use per-user defaults and build installs use an explicit GOPATH"
+if ! grep -qF 'ENV GOPATH=' "$CONTAINERFILE" \
+    && grep -qF 'GOPATH=/tmp/go-path GOBIN=/usr/local/bin' "$CONTAINERFILE" \
+    && grep -qF 'rm -rf /tmp/go-mod /tmp/go-build /tmp/go-path' "$CONTAINERFILE"; then
+    pass "runtime Go caches use per-user defaults and build caches are temporary"
 else
     fail "runtime Go cache configuration uses a shared GOPATH"
 fi

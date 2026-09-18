@@ -8,7 +8,7 @@ ARG PYTHON_BUILD=20260610
 ARG JIRA_MCP_VERSION=0.1.0
 ARG GOPLS_VERSION=0.22.0
 ARG PYRIGHT_VERSION=1.1.410
-ARG PIP_AUDIT_VERSION=2.9.0
+ARG PIP_AUDIT_VERSION=2.10.1
 ARG GOVULNCHECK_VERSION=1.8.0
 
 # ---- Stage 1: Base tools (shared by all agents) ----
@@ -149,10 +149,9 @@ RUN set -ex; \
 
 # Install LSP servers (gopls for Go, pyright for Python) — versions pinned via ARGs
 RUN GOMODCACHE=/tmp/go-mod GOCACHE=/tmp/go-build \
-    GOPATH=/home/node/go \
+    GOPATH=/tmp/go-path GOBIN=/usr/local/bin \
     /usr/local/go/bin/go install golang.org/x/tools/gopls@v${GOPLS_VERSION} \
-    && rm -rf /tmp/go-mod /tmp/go-build
-ENV PATH=$PATH:/home/node/go/bin
+    && rm -rf /tmp/go-mod /tmp/go-build /tmp/go-path
 RUN python3 -m pip install --no-cache-dir pyright==${PYRIGHT_VERSION}
 
 # CVE scanners are installed in shared system paths so both node and sandbox
