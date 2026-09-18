@@ -149,9 +149,10 @@ RUN set -ex; \
 
 # Install LSP servers (gopls for Go, pyright for Python) — versions pinned via ARGs
 RUN GOMODCACHE=/tmp/go-mod GOCACHE=/tmp/go-build \
-    GOPATH=/tmp/go-path GOBIN=/usr/local/bin \
+    GOPATH=/home/node/go \
     /usr/local/go/bin/go install golang.org/x/tools/gopls@v${GOPLS_VERSION} \
-    && rm -rf /tmp/go-mod /tmp/go-build /tmp/go-path
+    && rm -rf /tmp/go-mod /tmp/go-build
+ENV PATH=$PATH:/home/node/go/bin
 RUN python3 -m pip install --no-cache-dir pyright==${PYRIGHT_VERSION}
 
 # CVE scanners are installed in shared system paths so both node and sandbox
