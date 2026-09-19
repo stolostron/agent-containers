@@ -58,7 +58,10 @@ FULL_IMAGE="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
 echo ""
 echo "Building ${FULL_IMAGE} ..."
+PLATFORM="${PLATFORM:-linux/amd64}"
+echo "Platform: ${PLATFORM}"
 podman build \
+  --platform "${PLATFORM}" \
   -f "${REPO_ROOT}/${CONTAINERFILE}" \
   --build-arg GH_VERSION="${GH_VERSION:-2.96.0}" \
   --build-arg GO_VERSION="${GO_VERSION:-1.26.5}" \
