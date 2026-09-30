@@ -6,6 +6,7 @@ ARG OPENCODE_VERSION=1.17.7
 ARG PYTHON_VERSION=3.14.6
 ARG PYTHON_BUILD=20260610
 ARG JIRA_MCP_VERSION=0.1.0
+ARG AGENT_SWARM_MCP_VERSION=0.1.0
 ARG GOPLS_VERSION=0.22.0
 ARG PYRIGHT_VERSION=1.1.410
 ARG PIP_AUDIT_VERSION=2.10.1
@@ -139,6 +140,8 @@ RUN set -ex; \
 
 # Install Jira MCP Server from GitHub Releases
 ARG JIRA_MCP_VERSION
+ARG AGENT_SWARM_MCP_VERSION
+COPY .build-context/agent-swarm-mcp /tmp/agent-swarm-mcp
 RUN set -ex; \
     curl -fsSL -o /tmp/jira_mcp_server-${JIRA_MCP_VERSION}-py3-none-any.whl \
         "https://github.com/stolostron/jira-mcp-server/releases/download/v${JIRA_MCP_VERSION}/jira_mcp_server-${JIRA_MCP_VERSION}-py3-none-any.whl" \
@@ -147,10 +150,23 @@ RUN set -ex; \
     && rm -f /tmp/jira_mcp_server-*.whl \
     && jira-mcp-server --help | head -5
 
+# Install the internal Agent Swarm MCP server from its pinned release wheel.
+RUN set -ex; \
+    if [ -f /tmp/agent-swarm-mcp/pyproject.toml ]; then \
+        python3 -m pip install --no-cache-dir /tmp/agent-swarm-mcp; \
+    else \
+        curl -fsSL -o /tmp/agent_swarm_mcp_server-${AGENT_SWARM_MCP_VERSION}-py3-none-any.whl \
+            "https://github.com/stolostron/agent-swarm/releases/download/v${AGENT_SWARM_MCP_VERSION}/agent_swarm_mcp_server-${AGENT_SWARM_MCP_VERSION}-py3-none-any.whl"; \
+        python3 -m pip install --no-cache-dir /tmp/agent_swarm_mcp_server-*.whl; \
+        rm -f /tmp/agent_swarm_mcp_server-*.whl; \
+    fi \
+    && agent-swarm-mcp-server --help >/dev/null
+
 # Install LSP servers (gopls for Go, pyright for Python) — versions pinned via ARGs
 RUN GOMODCACHE=/tmp/go-mod GOCACHE=/tmp/go-build \
     GOPATH=/home/node/go \
     /usr/local/go/bin/go install golang.org/x/tools/gopls@v${GOPLS_VERSION} \
+    && chown -R node:node /home/node/go \
     && rm -rf /tmp/go-mod /tmp/go-build
 ENV PATH=$PATH:/home/node/go/bin
 RUN python3 -m pip install --no-cache-dir pyright==${PYRIGHT_VERSION}
