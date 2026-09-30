@@ -48,6 +48,18 @@ fi
 
 FULL_IMAGE="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
+# Stage the sibling Agent Swarm MCP source when available. This lets local
+# builds use the current checkout before a GitHub release wheel is published.
+BUILD_CONTEXT_DIR="${REPO_ROOT}/.build-context/agent-swarm-mcp"
+rm -rf "${REPO_ROOT}/.build-context"
+mkdir -p "${BUILD_CONTEXT_DIR}"
+AGENT_SWARM_SOURCE="${REPO_ROOT}/../agent-swarm/mcp-server"
+if [[ -f "${AGENT_SWARM_SOURCE}/pyproject.toml" ]]; then
+    cp -a "${AGENT_SWARM_SOURCE}/." "${BUILD_CONTEXT_DIR}/"
+else
+    touch "${BUILD_CONTEXT_DIR}/.keep"
+fi
+
 # Persist REGISTRY + IMAGE_TAG to defaults file
 {
     grep -v '^REGISTRY=' "$DEFAULTS_FILE" 2>/dev/null \
@@ -69,6 +81,7 @@ podman build \
   --build-arg RG_VERSION="${RG_VERSION:-15.2.0}" \
   --build-arg YQ_VERSION="${YQ_VERSION:-4.53.3}" \
   --build-arg JIRA_MCP_VERSION="${JIRA_MCP_VERSION:-0.2.1}" \
+  --build-arg AGENT_SWARM_MCP_VERSION="${AGENT_SWARM_MCP_VERSION:-0.1.0}" \
   --build-arg GOPLS_VERSION="${GOPLS_VERSION:-0.23.0}" \
   --build-arg PYRIGHT_VERSION="${PYRIGHT_VERSION:-1.1.411}" \
   --build-arg PIP_AUDIT_VERSION="${PIP_AUDIT_VERSION:-2.10.1}" \
