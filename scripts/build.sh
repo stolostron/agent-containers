@@ -55,7 +55,14 @@ rm -rf "${REPO_ROOT}/.build-context"
 mkdir -p "${BUILD_CONTEXT_DIR}"
 AGENT_SWARM_SOURCE="${REPO_ROOT}/../agent-swarm/mcp-server"
 if [[ -f "${AGENT_SWARM_SOURCE}/pyproject.toml" ]]; then
-    cp -a "${AGENT_SWARM_SOURCE}/." "${BUILD_CONTEXT_DIR}/"
+    (
+        cd "${AGENT_SWARM_SOURCE}"
+        git ls-files -z -- . |
+            while IFS= read -r -d '' file; do
+                mkdir -p "${BUILD_CONTEXT_DIR}/$(dirname "${file}")"
+                cp -a -- "${file}" "${BUILD_CONTEXT_DIR}/${file}"
+            done
+    )
 else
     touch "${BUILD_CONTEXT_DIR}/.keep"
 fi

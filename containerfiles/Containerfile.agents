@@ -166,6 +166,7 @@ RUN set -ex; \
 RUN GOMODCACHE=/tmp/go-mod GOCACHE=/tmp/go-build \
     GOPATH=/home/node/go \
     /usr/local/go/bin/go install golang.org/x/tools/gopls@v${GOPLS_VERSION} \
+    && chown -R node:node /home/node/go \
     && rm -rf /tmp/go-mod /tmp/go-build
 ENV PATH=$PATH:/home/node/go/bin
 RUN python3 -m pip install --no-cache-dir pyright==${PYRIGHT_VERSION}
