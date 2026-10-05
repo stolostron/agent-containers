@@ -7,6 +7,11 @@ AC_DEFAULTS := $(firstword $(wildcard ../agent-swarm/.push-defaults) .push-defau
 -include $(AC_DEFAULTS)
 
 IMAGES := opencode
+REGISTRY ?=
+IMAGE_TAG ?= latest
+SAVE_DEFAULTS ?= 1
+PUSH_LATEST ?= 1
+PUSH_DIGEST_FILE ?=
 
 # Toolchain versions — update all with: make update-deps
 GO_VERSION       ?= 1.27.1
@@ -61,10 +66,14 @@ build-$(1):
 	 PYRIGHT_VERSION=$(PYRIGHT_VERSION) \
 	 PIP_AUDIT_VERSION=$(PIP_AUDIT_VERSION) \
 	 GOVULNCHECK_VERSION=$(GOVULNCHECK_VERSION) \
+	 REGISTRY="$(REGISTRY)" \
+	 IMAGE_TAG="$(IMAGE_TAG)" \
+	 SAVE_DEFAULTS="$(SAVE_DEFAULTS)" \
 	 NOPROMPT=$(NOPROMPT) \
 	 bash scripts/build.sh $(1) $(CONTAINERFILE)
 push-$(1):
-	@bash scripts/push.sh $(1)
+	@REGISTRY="$(REGISTRY)" IMAGE_TAG="$(IMAGE_TAG)" PUSH_LATEST="$(PUSH_LATEST)" \
+	 PUSH_DIGEST_FILE="$(PUSH_DIGEST_FILE)" bash scripts/push.sh $(1)
 publish-$(1):
 	@$(MAKE) build-$(1) NOPROMPT=1
 	@$(MAKE) push-$(1)

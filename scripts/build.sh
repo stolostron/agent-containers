@@ -28,17 +28,19 @@ echo ""
 echo "=== Build: ${IMAGE_NAME} ==="
 
 if [[ "${NOPROMPT:-}" == "1" ]]; then
-    REGISTRY="$SAVED_REGISTRY"
-    IMAGE_TAG="$SAVED_IMAGE_TAG"
-else
-    if [[ -n "$SAVED_REGISTRY" ]]; then
-        read -rp "Registry  [${SAVED_REGISTRY}]: " REGISTRY
-    else
-        read -rp "Registry: " REGISTRY
-    fi
     REGISTRY="${REGISTRY:-$SAVED_REGISTRY}"
-    read -rp "IMAGE_TAG [${SAVED_IMAGE_TAG}]: " IMAGE_TAG
     IMAGE_TAG="${IMAGE_TAG:-$SAVED_IMAGE_TAG}"
+else
+    DEFAULT_REGISTRY="${REGISTRY:-$SAVED_REGISTRY}"
+    DEFAULT_IMAGE_TAG="${IMAGE_TAG:-$SAVED_IMAGE_TAG}"
+    if [[ -n "$DEFAULT_REGISTRY" ]]; then
+        read -rp "Registry  [${DEFAULT_REGISTRY}]: " REGISTRY_INPUT
+    else
+        read -rp "Registry: " REGISTRY_INPUT
+    fi
+    REGISTRY="${REGISTRY_INPUT:-$DEFAULT_REGISTRY}"
+    read -rp "IMAGE_TAG [${DEFAULT_IMAGE_TAG}]: " IMAGE_TAG_INPUT
+    IMAGE_TAG="${IMAGE_TAG_INPUT:-$DEFAULT_IMAGE_TAG}"
 fi
 
 if [[ -z "$REGISTRY" ]]; then
@@ -48,12 +50,12 @@ fi
 
 FULL_IMAGE="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
-# Stage the sibling Agent Swarm MCP source when available. This lets local
-# builds use the current checkout before a GitHub release wheel is published.
+# Stage an explicitly selected Agent Swarm MCP source. By default, builds install
+# the pinned release wheel, keeping local and CI build inputs reproducible.
 BUILD_CONTEXT_DIR="${REPO_ROOT}/.build-context/agent-swarm-mcp"
 rm -rf "${REPO_ROOT}/.build-context"
 mkdir -p "${BUILD_CONTEXT_DIR}"
-AGENT_SWARM_SOURCE="${REPO_ROOT}/../agent-swarm/mcp-server"
+AGENT_SWARM_SOURCE="${AGENT_SWARM_MCP_SOURCE:-}"
 if [[ -f "${AGENT_SWARM_SOURCE}/pyproject.toml" ]]; then
     (
         cd "${AGENT_SWARM_SOURCE}"
@@ -67,13 +69,16 @@ else
     touch "${BUILD_CONTEXT_DIR}/.keep"
 fi
 
-# Persist REGISTRY + IMAGE_TAG to defaults file
-{
-    grep -v '^REGISTRY=' "$DEFAULTS_FILE" 2>/dev/null \
-        | grep -v '^IMAGE_TAG=' || true
-    echo "REGISTRY=${REGISTRY}"
-    echo "IMAGE_TAG=${IMAGE_TAG}"
-} > "${DEFAULTS_FILE}.tmp" && mv "${DEFAULTS_FILE}.tmp" "$DEFAULTS_FILE"
+# Persist REGISTRY + IMAGE_TAG for interactive/local builds, unless the caller
+# explicitly disables this (as the release workflow does).
+if [[ "${SAVE_DEFAULTS:-1}" != "0" ]]; then
+    {
+        grep -v '^REGISTRY=' "$DEFAULTS_FILE" 2>/dev/null \
+            | grep -v '^IMAGE_TAG=' || true
+        echo "REGISTRY=${REGISTRY}"
+        echo "IMAGE_TAG=${IMAGE_TAG}"
+    } > "${DEFAULTS_FILE}.tmp" && mv "${DEFAULTS_FILE}.tmp" "$DEFAULTS_FILE"
+fi
 
 echo ""
 echo "Building ${FULL_IMAGE} ..."
@@ -99,4 +104,6 @@ podman build \
 
 echo ""
 echo "Built:   ${FULL_IMAGE}"
-echo "Defaults saved to ${DEFAULTS_FILE}"
+if [[ "${SAVE_DEFAULTS:-1}" != "0" ]]; then
+    echo "Defaults saved to ${DEFAULTS_FILE}"
+fi

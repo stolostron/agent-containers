@@ -1,0 +1,310 @@
+"""Tests for image release metadata and candidate promotion contracts."""
+
+from __future__ import annotations
+
+import importlib.util
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+
+def load_script(name: str):
+    spec = importlib.util.spec_from_file_location(name, ROOT / f"scripts/{name}.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+release = load_script("image_release")
+publisher = load_script("publish_image")
+container_e2e = load_script("e2e_container")
+kind_e2e = load_script("e2e_kind_pod")
+
+DIGEST = "sha256:" + "a" * 64
+IMAGE_REF = f"quay.io/example/opencode@{DIGEST}"
+BASELINE = "1" * 40
+SOURCE_1 = "2" * 40
+SOURCE_2 = "3" * 40
+
+
+@pytest.mark.parametrize(("current", "expected"), [("0.5.2", "0.5.3"), ("1.9.9", "1.9.10")])
+def test_next_version(current, expected):
+    assert release.next_version(current) == expected
+
+
+@pytest.mark.parametrize("invalid", ["", "1.2", "01.2.3", "1.2.3-rc1", "1.2.3\nnext"])
+def test_invalid_semver_is_rejected(invalid):
+    with pytest.raises(ValueError):
+        release.next_version(invalid)
+
+
+def test_digest_validation_and_registry_ownership(tmp_path):
+    path = tmp_path / "IMAGE_DIGEST"
+    release.write_digest(path, DIGEST, "quay.io/example")
+    assert release.read_digest(path, "quay.io/example") == IMAGE_REF
+    with pytest.raises(ValueError, match="belongs to"):
+        release.read_digest(path, "quay.io/other")
+    with pytest.raises(ValueError):
+        release.write_digest(path, "sha256:bad", "quay.io/example")
+    assert path.read_text().strip() == IMAGE_REF
+
+
+def test_pending_merges_uses_pr_association_and_preserves_first_parent_order(monkeypatch):
+    publisher_commit = "4" * 40
+
+    def fake_run(*_args, **_kwargs):
+        return None
+
+    def fake_output(command, text, env):
+        if command[1] == "rev-list":
+            return "\n".join([SOURCE_1, publisher_commit, SOURCE_2]) + "\n"
+        if command[0] == "gh":
+            commit = command[2].split("/")[-2]
+            if commit == publisher_commit:
+                return "[[]]"
+            return f'[[{{"merged_at":"now","base":{{"ref":"main"}},"merge_commit_sha":"{commit}"}}]]'
+        raise AssertionError(command)
+
+    monkeypatch.setattr(release.subprocess, "run", fake_run)
+    monkeypatch.setattr(release.subprocess, "check_output", fake_output)
+    assert release.pending_sources("example/repo", BASELINE, SOURCE_2, {"GH_TOKEN": "secret"}) == [
+        SOURCE_1, SOURCE_2,
+    ]
+
+
+def test_make_build_and_push_allow_ci_registry_tag_and_digest_capture():
+    build = subprocess.check_output(
+        ["make", "-n", "build-opencode", "REGISTRY=quay.io/example", "IMAGE_TAG=0.5.3", "NOPROMPT=1", "SAVE_DEFAULTS=0"],
+        cwd=ROOT,
+        text=True,
+    )
+    push = subprocess.check_output(
+        ["make", "-n", "push-opencode", "REGISTRY=quay.io/example", "IMAGE_TAG=0.5.3", "PUSH_LATEST=0", "PUSH_DIGEST_FILE=IMAGE_DIGEST"],
+        cwd=ROOT,
+        text=True,
+    )
+    assert 'REGISTRY="quay.io/example"' in build
+    assert 'IMAGE_TAG="0.5.3"' in build
+    assert 'SAVE_DEFAULTS="0"' in build
+    assert 'PUSH_LATEST="0"' in push
+    assert 'PUSH_DIGEST_FILE="IMAGE_DIGEST"' in push
+
+
+def _fake_container_tool(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    tool = fake_bin / "podman"
+    tool.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$*" >> "$PODMAN_CALLS"\n'
+        'if [ "$1" = push ] && [ "$2" = --digestfile ]; then\n'
+        '  [ -z "$FAIL_PUSH" ] || exit 1\n'
+        '  printf "sha256:%064d\\n" 0 > "$3"\n'
+        'fi\n'
+    )
+    tool.chmod(0o755)
+    return fake_bin
+
+
+def test_build_uses_explicit_ci_values_without_writing_local_defaults(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    shutil.copy(ROOT / "scripts/build.sh", scripts / "build.sh")
+    (tmp_path / "containerfiles").mkdir()
+    (tmp_path / "containerfiles/Containerfile.agents").write_text("# fixture\n")
+    defaults = tmp_path / ".push-defaults"
+    defaults.write_text("REGISTRY=quay.io/local\nIMAGE_TAG=local-tag\n")
+    calls = tmp_path / "podman-calls"
+    env = {
+        **os.environ,
+        "PATH": f"{_fake_container_tool(tmp_path)}:{os.environ['PATH']}",
+        "PODMAN_CALLS": str(calls),
+    }
+    result = subprocess.run(
+        ["bash", "scripts/build.sh", "opencode", "containerfiles/Containerfile.agents"],
+        cwd=tmp_path,
+        env={**env, "NOPROMPT": "1", "REGISTRY": "quay.io/example", "IMAGE_TAG": "0.5.3", "SAVE_DEFAULTS": "0"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "quay.io/example/opencode:0.5.3" in calls.read_text()
+    assert defaults.read_text() == "REGISTRY=quay.io/local\nIMAGE_TAG=local-tag\n"
+
+
+def test_push_captures_digest_and_does_not_promote_candidate_by_default_when_disabled(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    shutil.copy(ROOT / "scripts/push.sh", scripts / "push.sh")
+    shutil.copy(ROOT / "scripts/image_release.py", scripts / "image_release.py")
+    (tmp_path / "IMAGE_DIGEST").write_text("quay.io/example/opencode@sha256:" + "b" * 64 + "\n")
+    calls = tmp_path / "podman-calls"
+    env = {
+        **os.environ,
+        "PATH": f"{_fake_container_tool(tmp_path)}:{os.environ['PATH']}",
+        "PODMAN_CALLS": str(calls),
+    }
+    command = ["bash", "scripts/push.sh", "opencode"]
+    result = subprocess.run(
+        command,
+        cwd=tmp_path,
+        env={**env, "REGISTRY": "quay.io/example", "IMAGE_TAG": "0.5.3", "PUSH_LATEST": "0", "PUSH_DIGEST_FILE": "IMAGE_DIGEST"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert release.read_digest(tmp_path / "IMAGE_DIGEST") == "quay.io/example/opencode@sha256:" + "0" * 64
+    push_call = calls.read_text().strip()
+    assert push_call.startswith("push --digestfile ")
+    assert push_call.endswith("quay.io/example/opencode:0.5.3")
+
+    previous_digest = release.read_digest(tmp_path / "IMAGE_DIGEST")
+    failed = subprocess.run(
+        command,
+        cwd=tmp_path,
+        env={**env, "REGISTRY": "quay.io/example", "IMAGE_TAG": "0.5.4", "PUSH_LATEST": "0", "PUSH_DIGEST_FILE": "IMAGE_DIGEST", "FAIL_PUSH": "1"},
+        capture_output=True,
+        text=True,
+    )
+    assert failed.returncode != 0
+    assert release.read_digest(tmp_path / "IMAGE_DIGEST") == previous_digest
+
+
+def _release_environment(monkeypatch, output_path):
+    for key, value in {
+        "GITHUB_REPOSITORY": "example/agent-containers",
+        "GITHUB_ACTOR": "release-bot",
+        "QUAY_REPOSITORY_PATH": "quay.io/example",
+        "QUAY_ROBOT_USERNAME": "robot",
+        "QUAY_PUSH_TOKEN": "quay-secret",
+        "GH_TOKEN": "github-secret",
+        "GITHUB_OUTPUT": str(output_path),
+    }.items():
+        monkeypatch.setenv(key, value)
+
+
+def test_publish_prepares_each_candidate_in_order_without_passing_secrets_to_build(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "VERSION").write_text("0.5.2\n")
+    (tmp_path / "IMAGE_DIGEST").write_text("\n")
+    (tmp_path / "IMAGE_PUBLISH_STATE").write_text(BASELINE + "\n")
+    output_path = tmp_path / "github-output"
+    _release_environment(monkeypatch, output_path)
+    monkeypatch.setattr(publisher, "pending_sources", lambda *_args: [SOURCE_1, SOURCE_2])
+    monkeypatch.setattr(publisher, "output", lambda *_args, **_kwargs: BASELINE)
+    calls = []
+
+    def fake_run(*command, **kwargs):
+        calls.append((command, kwargs))
+        if command[:2] == ("make", "push-opencode"):
+            release.write_digest(Path("IMAGE_DIGEST"), DIGEST, "quay.io/example")
+        elif command[:2] == ("git", "restore"):
+            Path("IMAGE_DIGEST").write_text("\n")
+
+    monkeypatch.setattr(publisher, "run", fake_run)
+    publisher.publish_candidates()
+
+    build_calls = [(command, kwargs) for command, kwargs in calls if command[:2] == ("make", "build-opencode")]
+    assert [next(arg for arg in cmd if arg.startswith("IMAGE_TAG=")) for cmd, _ in build_calls] == [
+        "IMAGE_TAG=0.5.3", "IMAGE_TAG=0.5.4",
+    ]
+    for _, kwargs in build_calls:
+        assert "GH_TOKEN" not in kwargs["env"]
+        assert "QUAY_PUSH_TOKEN" not in kwargs["env"]
+    assert (tmp_path / "VERSION").read_text() == "0.5.4\n"
+    assert (tmp_path / "IMAGE_PUBLISH_STATE").read_text() == SOURCE_2 + "\n"
+    assert output_path.read_text().count(IMAGE_REF) == 2
+
+
+def test_failed_candidate_build_does_not_report_a_publish_or_advance_the_cursor(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "VERSION").write_text("0.5.2\n")
+    (tmp_path / "IMAGE_DIGEST").write_text("\n")
+    (tmp_path / "IMAGE_PUBLISH_STATE").write_text(BASELINE + "\n")
+    output_path = tmp_path / "github-output"
+    _release_environment(monkeypatch, output_path)
+    monkeypatch.setattr(publisher, "pending_sources", lambda *_args: [SOURCE_1])
+    monkeypatch.setattr(publisher, "output", lambda *_args, **_kwargs: BASELINE)
+
+    def fail_build(*command, **_kwargs):
+        if command[:2] == ("make", "build-opencode"):
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(publisher, "run", fail_build)
+    with pytest.raises(subprocess.CalledProcessError):
+        publisher.publish_candidates()
+    assert (tmp_path / "VERSION").read_text() == "0.5.2\n"
+    assert (tmp_path / "IMAGE_PUBLISH_STATE").read_text() == BASELINE + "\n"
+    assert not output_path.exists()
+
+
+def test_promotion_failure_does_not_push_release_cursor(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "VERSION").write_text("0.5.3\n")
+    (tmp_path / "IMAGE_DIGEST").write_text(IMAGE_REF + "\n")
+    _release_environment(monkeypatch, tmp_path / "github-output")
+    monkeypatch.setattr(publisher, "output", lambda *args, **_kwargs: "image-publisher" if args[1:3] == ("branch", "--show-current") else "1")
+    calls = []
+
+    def fake_run(*command, **kwargs):
+        calls.append(command)
+        if command[:2] == ("make", "push-opencode"):
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(publisher, "run", fake_run)
+    with pytest.raises(subprocess.CalledProcessError):
+        publisher.promote_and_push()
+    assert not any(command[:2] == ("git", "push") for command in calls)
+
+
+def test_promote_requires_latest_digest_parity_before_metadata_push(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "VERSION").write_text("0.5.3\n")
+    (tmp_path / "IMAGE_DIGEST").write_text(IMAGE_REF + "\n")
+    _release_environment(monkeypatch, tmp_path / "github-output")
+    monkeypatch.setattr(
+        publisher,
+        "output",
+        lambda *args, **_kwargs: "image-publisher" if args[1:3] == ("branch", "--show-current") else "1",
+    )
+    calls = []
+
+    def fake_run(*command, **kwargs):
+        calls.append(command)
+        if command[:2] == ("make", "push-opencode"):
+            release.write_digest(Path("IMAGE_DIGEST"), DIGEST, "quay.io/example")
+
+    monkeypatch.setattr(publisher, "run", fake_run)
+    publisher.promote_and_push()
+    assert next(i for i, c in enumerate(calls) if c[:2] == ("make", "push-opencode")) < next(
+        i for i, c in enumerate(calls) if c[:2] == ("git", "push")
+    )
+
+
+def test_both_e2e_helpers_require_digest_refs_and_kind_runs_non_root_security_context():
+    assert container_e2e.validate_image_ref(IMAGE_REF) == IMAGE_REF
+    with pytest.raises(ValueError):
+        container_e2e.validate_image_ref("quay.io/example/opencode:0.5.3")
+    manifest = kind_e2e.pod_manifest(IMAGE_REF)
+    assert '"runAsUser": 1000' in manifest
+    assert '"runAsNonRoot": true' in manifest
+    assert '"imagePullPolicy": "Always"' in manifest
+    assert IMAGE_REF in manifest
+
+
+def test_workflow_gates_promotion_on_both_e2e_stages():
+    workflow = (ROOT / ".github/workflows/publish-image.yml").read_text()
+    standalone = workflow.index("Run standalone container E2E for every candidate")
+    kind = workflow.index("Run KinD Pod E2E for every candidate")
+    promote = workflow.index("Promote tested candidate and publish release metadata")
+    assert standalone < kind < promote
+    assert workflow.count("steps.publish.outputs.published == 'true'") == 4
+    assert "cancel-in-progress: false" in workflow
