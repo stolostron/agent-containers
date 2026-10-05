@@ -54,7 +54,9 @@ def pod_manifest(image_ref: str) -> str:
                 "command": ["/bin/sh", "-ec", (
                     'test "$(id -u)" -eq 1000; '
                     'test "$(id -u sandbox)" -ne 0; '
+                    'test "$HOME" = /home/node; '
                     'test -w /home/node; '
+                    'test -w /home/node/.config; '
                     'test "$(stat -c %u /sandbox)" = "$(id -u sandbox)"; '
                     'opencode --version; agent-swarm-mcp-server --help >/dev/null; '
                     'echo "runtime uid=$(id -u) image-pull=ok mcp-startup=ok"'
@@ -93,7 +95,7 @@ def main() -> int:
         created = True
         run(["kind", "create", "cluster", "--name", args.cluster_name, "--wait", "180s"])
         run(["kubectl", "apply", "-f", "-"], input=pod_manifest(image_ref))
-        run(["kubectl", "wait", f"--for=jsonpath={{.status.phase}}=Succeeded", f"pod/{POD}", f"--timeout={args.timeout}s"])
+        run(["kubectl", "wait", "--for=jsonpath={.status.phase}=Succeeded", f"pod/{POD}", f"--timeout={args.timeout}s"])
         result = run(["kubectl", "logs", POD])
         print(result.stdout.rstrip())
         if "runtime uid=1000 image-pull=ok mcp-startup=ok" not in result.stdout:

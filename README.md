@@ -224,6 +224,11 @@ Edit or delete to reset defaults.
 
 ### Automated image releases
 
+Pull requests to `main` run the Python and shell test suites. The image-build
+smoke check runs only for same-repository PR branches (the trusted-PR boundary)
+and builds locally without pushing. Standalone container and KinD E2E remain in
+the release workflow and run only after changes reach `main`.
+
 Every push to `main` runs the serialized image release workflow. For each
 unprocessed PR squash merge, in first-parent order, it builds a new patch
 SemVer candidate from that merge commit and pushes it to Quay. The workflow
@@ -244,10 +249,10 @@ Configure these repository Actions settings:
   `contents: write` and `pull-requests: read`; permit the Actions bot to push
   release metadata commits to protected `main` if branch protection is enabled.
 
-Candidate builds use the pinned Agent Swarm MCP release wheel selected by
-`AGENT_SWARM_MCP_VERSION`; the workflow does not check out or build the full
-`agent-swarm` application. CI registry and tag values override local defaults
-without modifying `.push-defaults`.
+Candidate builds fetch the pinned Agent Swarm commit in
+`AGENT_SWARM_MCP_REVISION` and stage only its tracked `mcp-server` package; they
+do not build or run the full `agent-swarm` application. CI registry and tag
+values override local defaults without modifying `.push-defaults`.
 
 If a build or either E2E gate fails, `latest` and committed release metadata
 remain unchanged. The candidate tag is retained for diagnosis. A later push to
@@ -255,7 +260,8 @@ remain unchanged. The candidate tag is retained for diagnosis. A later push to
 retried in order. Logs include candidate groups, and KinD failures report Pods,
 events, descriptions, and workload logs before cluster cleanup.
 
-Run the helper tests locally with `pytest -q tests/test_image_release.py`.
+Run the helper tests locally with `pytest -q tests/test_image_release.py` and
+lint with `make lint` (Ruff at the pinned `RUFF_VERSION` is required).
 The E2E scripts can be invoked against an already-pushed candidate digest:
 
 ```bash

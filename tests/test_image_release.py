@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 import shutil
@@ -94,8 +95,13 @@ def test_make_build_and_push_allow_ci_registry_tag_and_digest_capture():
     assert 'REGISTRY="quay.io/example"' in build
     assert 'IMAGE_TAG="0.5.3"' in build
     assert 'SAVE_DEFAULTS="0"' in build
+    assert "AGENT_SWARM_MCP_REVISION=292c2128164a237aa59e04b11f03630a61113639" in build
     assert 'PUSH_LATEST="0"' in push
     assert 'PUSH_DIGEST_FILE="IMAGE_DIGEST"' in push
+    assert subprocess.check_output(["make", "-s", "lint-version"], cwd=ROOT, text=True).strip() == "0.15.22"
+    makefile = (ROOT / "Makefile").read_text()
+    assert "commits?path=mcp-server&per_page=1" in makefile
+    assert "LATEST_RUFF := $(shell curl -fsSL 'https://pypi.org/pypi/ruff/json'" in makefile
 
 
 def _fake_container_tool(tmp_path):
@@ -120,6 +126,14 @@ def test_build_uses_explicit_ci_values_without_writing_local_defaults(tmp_path):
     shutil.copy(ROOT / "scripts/build.sh", scripts / "build.sh")
     (tmp_path / "containerfiles").mkdir()
     (tmp_path / "containerfiles/Containerfile.agents").write_text("# fixture\n")
+    source = tmp_path / "agent-swarm/mcp-server"
+    source.mkdir(parents=True)
+    (source / "pyproject.toml").write_text('[project]\nname = "fixture"\n')
+    subprocess.run(["git", "init", "-q", str(source.parent)], check=True)
+    subprocess.run(["git", "-C", str(source.parent), "config", "user.name", "test"], check=True)
+    subprocess.run(["git", "-C", str(source.parent), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(["git", "-C", str(source.parent), "add", "mcp-server/pyproject.toml"], check=True)
+    subprocess.run(["git", "-C", str(source.parent), "commit", "-qm", "fixture"], check=True)
     defaults = tmp_path / ".push-defaults"
     defaults.write_text("REGISTRY=quay.io/local\nIMAGE_TAG=local-tag\n")
     calls = tmp_path / "podman-calls"
@@ -131,13 +145,22 @@ def test_build_uses_explicit_ci_values_without_writing_local_defaults(tmp_path):
     result = subprocess.run(
         ["bash", "scripts/build.sh", "opencode", "containerfiles/Containerfile.agents"],
         cwd=tmp_path,
-        env={**env, "NOPROMPT": "1", "REGISTRY": "quay.io/example", "IMAGE_TAG": "0.5.3", "SAVE_DEFAULTS": "0"},
+        env={
+            **env,
+            "NOPROMPT": "1",
+            "REGISTRY": "quay.io/example",
+            "IMAGE_TAG": "0.5.3",
+            "SAVE_DEFAULTS": "0",
+            "AGENT_SWARM_MCP_SOURCE": str(source),
+            "AGENT_SWARM_MCP_REVISION": "2" * 40,
+        },
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
     assert "quay.io/example/opencode:0.5.3" in calls.read_text()
     assert defaults.read_text() == "REGISTRY=quay.io/local\nIMAGE_TAG=local-tag\n"
+    assert (tmp_path / ".build-context/agent-swarm-mcp/pyproject.toml").exists()
 
 
 def test_push_captures_digest_and_does_not_promote_candidate_by_default_when_disabled(tmp_path):
@@ -293,11 +316,13 @@ def test_both_e2e_helpers_require_digest_refs_and_kind_runs_non_root_security_co
     assert container_e2e.validate_image_ref(IMAGE_REF) == IMAGE_REF
     with pytest.raises(ValueError):
         container_e2e.validate_image_ref("quay.io/example/opencode:0.5.3")
-    manifest = kind_e2e.pod_manifest(IMAGE_REF)
-    assert '"runAsUser": 1000' in manifest
-    assert '"runAsNonRoot": true' in manifest
-    assert '"imagePullPolicy": "Always"' in manifest
-    assert IMAGE_REF in manifest
+    manifest = json.loads(kind_e2e.pod_manifest(IMAGE_REF))
+    container = manifest["spec"]["containers"][0]
+    assert container["securityContext"]["runAsUser"] == 1000
+    assert container["securityContext"]["runAsNonRoot"] is True
+    assert container["imagePullPolicy"] == "Always"
+    assert 'test "$HOME" = /home/node' in container["command"][2]
+    assert container["image"] == IMAGE_REF
 
 
 def test_workflow_gates_promotion_on_both_e2e_stages():
@@ -308,3 +333,18 @@ def test_workflow_gates_promotion_on_both_e2e_stages():
     assert standalone < kind < promote
     assert workflow.count("steps.publish.outputs.published == 'true'") == 4
     assert "cancel-in-progress: false" in workflow
+    assert "pull_request:" not in workflow
+
+
+def test_pr_workflow_tests_every_pr_but_builds_images_only_for_trusted_prs():
+    workflow = (ROOT / ".github/workflows/test.yml").read_text()
+    assert "pull_request:" in workflow
+    assert "python -m pytest -q" in workflow
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in workflow
+    assert "make build-opencode REGISTRY=localhost" in workflow
+    assert "SAVE_DEFAULTS=0" in workflow
+    assert "podman push" not in workflow
+    lint = (ROOT / ".github/workflows/lint.yml").read_text()
+    assert "pull_request:" in lint
+    assert "make lint" in lint
+    assert "make --no-print-directory -s lint-version" in lint

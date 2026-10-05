@@ -4,7 +4,9 @@
 # ../agent-swarm/.push-defaults: REGISTRY + IMAGE_TAG (source of truth) — checked in.
 -include .push-defaults
 AC_DEFAULTS := $(firstword $(wildcard ../agent-swarm/.push-defaults) .push-defaults)
+ifneq ($(AC_DEFAULTS),.push-defaults)
 -include $(AC_DEFAULTS)
+endif
 
 IMAGES := opencode
 REGISTRY ?=
@@ -23,11 +25,12 @@ FZF_VERSION      ?= 0.74.4
 RG_VERSION       ?= 15.2.0
 YQ_VERSION       ?= 4.54.1
 JIRA_MCP_VERSION ?= 0.2.1
-AGENT_SWARM_MCP_VERSION ?= 0.1.0
+AGENT_SWARM_MCP_REVISION ?= 292c2128164a237aa59e04b11f03630a61113639
 GOPLS_VERSION    ?= 0.23.0
 PYRIGHT_VERSION  ?= 1.1.414
 PIP_AUDIT_VERSION ?= 2.10.1
 GOVULNCHECK_VERSION ?= 1.8.0
+RUFF_VERSION ?= 0.15.22
 
 # Per-image build targets
 TARGET_opencode := opencode
@@ -61,7 +64,7 @@ build-$(1):
 	 RG_VERSION=$(RG_VERSION) \
 	 YQ_VERSION=$(YQ_VERSION) \
 	 JIRA_MCP_VERSION=$(JIRA_MCP_VERSION) \
-	 AGENT_SWARM_MCP_VERSION=$(AGENT_SWARM_MCP_VERSION) \
+	 AGENT_SWARM_MCP_REVISION=$(AGENT_SWARM_MCP_REVISION) \
 	 GOPLS_VERSION=$(GOPLS_VERSION) \
 	 PYRIGHT_VERSION=$(PYRIGHT_VERSION) \
 	 PIP_AUDIT_VERSION=$(PIP_AUDIT_VERSION) \
@@ -111,6 +114,15 @@ build:  ## Build all images (first image prompts for registry/tag, rest reuse sa
 push:       $(addprefix push-,$(IMAGES))        ## Push all images
 publish:    $(addprefix publish-,$(IMAGES))      ## Build + push all images (no prompts)
 
+.PHONY: lint lint-version
+lint:  ## Lint Python and validate shell syntax
+	@command -v ruff >/dev/null 2>&1 || { echo "ruff $(RUFF_VERSION) is required; install it with: python3 -m pip install ruff==$(RUFF_VERSION)" >&2; exit 1; }
+	@test "$$(ruff --version)" = "ruff $(RUFF_VERSION)" || { echo "Expected ruff $(RUFF_VERSION), got $$(ruff --version)" >&2; exit 1; }
+	ruff check scripts tests
+	@set -eu; for script in scripts/*.sh tests/*.sh; do bash -n "$$script"; done
+lint-version:
+	@printf '%s\n' "$(RUFF_VERSION)"
+
 # --------------------------------------------------------------------------
 # Secrets
 # --------------------------------------------------------------------------
@@ -136,6 +148,8 @@ update-deps:  ## Fetch latest versions of all dependencies and update Makefile
 	$(eval LATEST_PYRIGHT := $(shell curl -fsSL 'https://pypi.org/pypi/pyright/json' | jq -r '.info.version // empty'))
 	$(eval LATEST_PIP_AUDIT := $(shell curl -fsSL 'https://pypi.org/pypi/pip-audit/json' | jq -r '[.releases | keys[] | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$$"))] | sort_by(split(".") | map(tonumber)) | last // empty'))
 	$(eval LATEST_GOVULNCHECK := $(shell curl -fsSL 'https://proxy.golang.org/golang.org/x/vuln/@latest' | jq -r '.Version // empty' | sed 's/^v//'))
+	$(eval LATEST_AGENT_SWARM_MCP_REVISION := $(shell curl -fsSL 'https://api.github.com/repos/stolostron/agent-swarm/commits?path=mcp-server&per_page=1' | jq -r '.[0].sha // empty'))
+	$(eval LATEST_RUFF := $(shell curl -fsSL 'https://pypi.org/pypi/ruff/json' | jq -r '.info.version // empty'))
 	$(if $(strip $(LATEST_GO)),,$(error Failed to fetch latest Go version - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_BUILD)),,$(error Failed to fetch latest Python build tag - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_PY)),,$(error Failed to fetch latest Python version - aborting without modifying Makefile))
@@ -149,10 +163,12 @@ update-deps:  ## Fetch latest versions of all dependencies and update Makefile
 	$(if $(strip $(LATEST_PYRIGHT)),,$(error Failed to fetch latest pyright version - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_PIP_AUDIT)),,$(error Failed to fetch latest pip-audit version - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_GOVULNCHECK)),,$(error Failed to fetch latest govulncheck version - aborting without modifying Makefile))
-	@echo "Go: $(LATEST_GO)  Python: $(LATEST_PY) (build: $(LATEST_BUILD))  opencode: $(LATEST_OC)  gh: $(LATEST_GH)  fzf: $(LATEST_FZF)  rg: $(LATEST_RG)  yq: $(LATEST_YQ)  jira-mcp: $(LATEST_JIRA_MCP)  gopls: $(LATEST_GOPLS)  pyright: $(LATEST_PYRIGHT)  pip-audit: $(LATEST_PIP_AUDIT)  govulncheck: $(LATEST_GOVULNCHECK)"
+	$(if $(strip $(LATEST_AGENT_SWARM_MCP_REVISION)),,$(error Failed to fetch latest Agent Swarm MCP source revision - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_RUFF)),,$(error Failed to fetch latest Ruff version - aborting without modifying Makefile))
+	@echo "Go: $(LATEST_GO)  Python: $(LATEST_PY) (build: $(LATEST_BUILD))  opencode: $(LATEST_OC)  gh: $(LATEST_GH)  fzf: $(LATEST_FZF)  rg: $(LATEST_RG)  yq: $(LATEST_YQ)  jira-mcp: $(LATEST_JIRA_MCP)  agent-swarm-mcp: $(LATEST_AGENT_SWARM_MCP_REVISION)  gopls: $(LATEST_GOPLS)  pyright: $(LATEST_PYRIGHT)  pip-audit: $(LATEST_PIP_AUDIT)  govulncheck: $(LATEST_GOVULNCHECK)  ruff: $(LATEST_RUFF)"
 	@set -eu; tmpfile=$$(mktemp Makefile.XXXXXX); trap 'rm -f "$$tmpfile"' EXIT; \
 		cp Makefile "$$tmpfile"; \
-		sed -i 's/^GO_VERSION\s*?= .*/GO_VERSION       ?= $(LATEST_GO)/; s/^PYTHON_VERSION\s*?= .*/PYTHON_VERSION   ?= $(LATEST_PY)/; s/^PYTHON_BUILD\s*?= .*/PYTHON_BUILD     ?= $(LATEST_BUILD)/; s/^OPENCODE_VERSION\s*?= .*/OPENCODE_VERSION ?= $(LATEST_OC)/; s/^GH_VERSION\s*?= .*/GH_VERSION       ?= $(LATEST_GH)/; s/^FZF_VERSION\s*?= .*/FZF_VERSION      ?= $(LATEST_FZF)/; s/^RG_VERSION\s*?= .*/RG_VERSION       ?= $(LATEST_RG)/; s/^YQ_VERSION\s*?= .*/YQ_VERSION       ?= $(LATEST_YQ)/; s/^JIRA_MCP_VERSION\s*?= .*/JIRA_MCP_VERSION ?= $(LATEST_JIRA_MCP)/; s/^GOPLS_VERSION\s*?= .*/GOPLS_VERSION    ?= $(LATEST_GOPLS)/; s/^PYRIGHT_VERSION\s*?= .*/PYRIGHT_VERSION  ?= $(LATEST_PYRIGHT)/; s/^PIP_AUDIT_VERSION\s*?= .*/PIP_AUDIT_VERSION ?= $(LATEST_PIP_AUDIT)/; s/^GOVULNCHECK_VERSION\s*?= .*/GOVULNCHECK_VERSION ?= $(LATEST_GOVULNCHECK)/' "$$tmpfile"; \
+	 sed -i 's/^GO_VERSION\s*?= .*/GO_VERSION       ?= $(LATEST_GO)/; s/^PYTHON_VERSION\s*?= .*/PYTHON_VERSION   ?= $(LATEST_PY)/; s/^PYTHON_BUILD\s*?= .*/PYTHON_BUILD     ?= $(LATEST_BUILD)/; s/^OPENCODE_VERSION\s*?= .*/OPENCODE_VERSION ?= $(LATEST_OC)/; s/^GH_VERSION\s*?= .*/GH_VERSION       ?= $(LATEST_GH)/; s/^FZF_VERSION\s*?= .*/FZF_VERSION      ?= $(LATEST_FZF)/; s/^RG_VERSION\s*?= .*/RG_VERSION       ?= $(LATEST_RG)/; s/^YQ_VERSION\s*?= .*/YQ_VERSION       ?= $(LATEST_YQ)/; s/^JIRA_MCP_VERSION\s*?= .*/JIRA_MCP_VERSION ?= $(LATEST_JIRA_MCP)/; s/^AGENT_SWARM_MCP_REVISION\s*?= .*/AGENT_SWARM_MCP_REVISION ?= $(LATEST_AGENT_SWARM_MCP_REVISION)/; s/^GOPLS_VERSION\s*?= .*/GOPLS_VERSION    ?= $(LATEST_GOPLS)/; s/^PYRIGHT_VERSION\s*?= .*/PYRIGHT_VERSION  ?= $(LATEST_PYRIGHT)/; s/^PIP_AUDIT_VERSION\s*?= .*/PIP_AUDIT_VERSION ?= $(LATEST_PIP_AUDIT)/; s/^GOVULNCHECK_VERSION\s*?= .*/GOVULNCHECK_VERSION ?= $(LATEST_GOVULNCHECK)/; s/^RUFF_VERSION\s*?= .*/RUFF_VERSION ?= $(LATEST_RUFF)/' "$$tmpfile"; \
 		grep -q '^PIP_AUDIT_VERSION\s*?=' "$$tmpfile" && grep -q '^GOVULNCHECK_VERSION\s*?=' "$$tmpfile"; \
 		mv "$$tmpfile" Makefile; trap - EXIT
 

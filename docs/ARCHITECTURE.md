@@ -11,6 +11,11 @@
 
 ## Automated image releases
 
+`.github/workflows/test.yml` runs the unit/contract and shell test suites for
+pull requests. Its local image-build check is restricted to PRs whose head
+branch is in this repository; it never pushes. The image release and both E2E
+gates are confined to `.github/workflows/publish-image.yml` on pushes to `main`.
+
 `.github/workflows/publish-image.yml` serializes pushes to `main` and uses the
 tracked `IMAGE_PUBLISH_STATE` SHA as a catch-up cursor. `scripts/image_release.py`
 walks first-parent commits after that cursor and uses GitHub's commit-to-PR
@@ -22,9 +27,10 @@ explicit `REGISTRY` and `IMAGE_TAG` Make overrides, pushes its candidate tag,
 records `IMAGE_DIGEST`, and prepares local metadata commits. Build subprocesses
 receive an allowlisted environment without GitHub or Quay credentials; registry
 authentication is isolated in a temporary Podman authfile. By default,
-`scripts/build.sh` installs the pinned Agent Swarm MCP release rather than using
-an implicitly discovered sibling checkout. `AGENT_SWARM_MCP_SOURCE` is an
-explicit local-only override.
+`scripts/build.sh` fetches only the exact `AGENT_SWARM_MCP_REVISION` source
+commit and stages its tracked `mcp-server` package. It does not build or run
+the Agent Swarm application. `AGENT_SWARM_MCP_SOURCE` is an explicit local
+source override.
 
 Every pushed digest passes `scripts/e2e_container.py` (runtime identity and
 permissions, pinned tools/MCP startup, and the OpenCode `/global/health`
@@ -38,7 +44,9 @@ the public Quay image for E2E, GitHub `contents: write` and
 `pull-requests: read`, and permission for the Actions bot to update `main`.
 
 Release contracts and failure/promotion behavior are covered by
-`tests/test_image_release.py` (`pytest -q tests/test_image_release.py`).
+`tests/test_image_release.py` (`pytest -q tests/test_image_release.py`). The
+`make lint` target runs Ruff over Python sources and validates shell syntax;
+`.github/workflows/lint.yml` runs it for pull requests and pushes to `main`.
 
 ## CVE Scanner Runtime
 

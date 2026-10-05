@@ -42,7 +42,9 @@ test "$(id -u)" -eq 1000
 test "$(id -u node)" -eq 1000
 test "$(id -u sandbox)" -ne 0
 test "$(stat -c %u /sandbox)" = "$(id -u sandbox)"
+test "$HOME" = /home/node
 test -w /home/node
+test -w /home/node/.config
 for tool in opencode node npm git gh go python3 rg fzf yq jira-mcp-server agent-swarm-mcp-server pip-audit govulncheck; do
   command -v "$tool" >/dev/null
 done

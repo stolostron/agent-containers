@@ -50,23 +50,42 @@ fi
 
 FULL_IMAGE="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
-# Stage an explicitly selected Agent Swarm MCP source. By default, builds install
-# the pinned release wheel, keeping local and CI build inputs reproducible.
+# Stage the Agent Swarm MCP source. By default, fetch the exact pinned commit;
+# AGENT_SWARM_MCP_SOURCE is available as an explicit local source override.
 BUILD_CONTEXT_DIR="${REPO_ROOT}/.build-context/agent-swarm-mcp"
 rm -rf "${REPO_ROOT}/.build-context"
 mkdir -p "${BUILD_CONTEXT_DIR}"
 AGENT_SWARM_SOURCE="${AGENT_SWARM_MCP_SOURCE:-}"
-if [[ -f "${AGENT_SWARM_SOURCE}/pyproject.toml" ]]; then
-    (
-        cd "${AGENT_SWARM_SOURCE}"
-        git ls-files -z -- . |
-            while IFS= read -r -d '' file; do
-                mkdir -p "${BUILD_CONTEXT_DIR}/$(dirname "${file}")"
-                cp -a -- "${file}" "${BUILD_CONTEXT_DIR}/${file}"
-            done
-    )
-else
-    touch "${BUILD_CONTEXT_DIR}/.keep"
+SOURCE_TMP_DIR=""
+trap '[[ -z "$SOURCE_TMP_DIR" ]] || rm -rf "$SOURCE_TMP_DIR"' EXIT
+if [[ -z "$AGENT_SWARM_SOURCE" ]]; then
+    AGENT_SWARM_MCP_REVISION="${AGENT_SWARM_MCP_REVISION:-}"
+    if [[ ! "$AGENT_SWARM_MCP_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "Error: AGENT_SWARM_MCP_REVISION must be a full 40-character commit SHA." >&2
+        exit 1
+    fi
+    SOURCE_TMP_DIR=$(mktemp -d)
+    git -C "$SOURCE_TMP_DIR" init -q
+    git -C "$SOURCE_TMP_DIR" remote add origin https://github.com/stolostron/agent-swarm.git
+    git -C "$SOURCE_TMP_DIR" fetch -q --depth=1 origin "$AGENT_SWARM_MCP_REVISION"
+    git -C "$SOURCE_TMP_DIR" checkout -q --detach FETCH_HEAD
+    AGENT_SWARM_SOURCE="${SOURCE_TMP_DIR}/mcp-server"
+fi
+if [[ ! -f "${AGENT_SWARM_SOURCE}/pyproject.toml" ]]; then
+    echo "Error: Agent Swarm MCP source not found at ${AGENT_SWARM_SOURCE}." >&2
+    exit 1
+fi
+(
+    cd "${AGENT_SWARM_SOURCE}"
+    git ls-files -z -- . |
+        while IFS= read -r -d '' file; do
+            mkdir -p "${BUILD_CONTEXT_DIR}/$(dirname "${file}")"
+            cp -a -- "${file}" "${BUILD_CONTEXT_DIR}/${file}"
+        done
+)
+if [[ -n "$SOURCE_TMP_DIR" ]]; then
+    rm -rf "$SOURCE_TMP_DIR"
+    SOURCE_TMP_DIR=""
 fi
 
 # Persist REGISTRY + IMAGE_TAG for interactive/local builds, unless the caller
@@ -93,7 +112,7 @@ podman build \
   --build-arg RG_VERSION="${RG_VERSION:-15.2.0}" \
   --build-arg YQ_VERSION="${YQ_VERSION:-4.53.3}" \
   --build-arg JIRA_MCP_VERSION="${JIRA_MCP_VERSION:-0.2.1}" \
-  --build-arg AGENT_SWARM_MCP_VERSION="${AGENT_SWARM_MCP_VERSION:-0.1.0}" \
+  --build-arg AGENT_SWARM_MCP_REVISION="${AGENT_SWARM_MCP_REVISION:-}" \
   --build-arg GOPLS_VERSION="${GOPLS_VERSION:-0.23.0}" \
   --build-arg PYRIGHT_VERSION="${PYRIGHT_VERSION:-1.1.411}" \
   --build-arg PIP_AUDIT_VERSION="${PIP_AUDIT_VERSION:-2.10.1}" \
