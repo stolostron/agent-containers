@@ -227,14 +227,17 @@ Edit or delete to reset defaults.
 Pull requests to `main` run the Python and shell test suites. The image-build
 smoke check runs only for same-repository PR branches (the trusted-PR boundary)
 and builds locally without pushing. Standalone container and KinD E2E remain in
-the release workflow and run only after changes reach `main`.
+the release workflow and run only after changes reach `main`. CodeQL Python
+analysis and dependency review run in a separate security workflow; `pip-audit`
+checks installed image dependencies on trusted builds and release candidates.
 
 Every push to `main` runs the serialized image release workflow. For each
 unprocessed PR squash merge, in first-parent order, it builds a new patch
 SemVer candidate from that merge commit and pushes it to Quay. The workflow
 records the immutable image digest, runs standalone Podman and KinD Pod E2E
-checks against that digest, and only then moves `latest` and commits
-`VERSION`, `IMAGE_DIGEST`, and `IMAGE_PUBLISH_STATE` to `main`.
+checks and a `pip-audit` SCA scan against that digest, signs each candidate,
+and only then moves `latest` and commits `VERSION`, `IMAGE_DIGEST`, and
+`IMAGE_PUBLISH_STATE` to `main`.
 
 Configure these repository Actions settings:
 
@@ -246,8 +249,9 @@ Configure these repository Actions settings:
   candidates can be retried from the unchanged release cursor.
 - The Quay repository must allow anonymous pulls so Podman and KinD can test
   each candidate by digest. The workflow's GitHub token requires
-  `contents: write` and `pull-requests: read`; permit the Actions bot to push
-  release metadata commits to protected `main` if branch protection is enabled.
+  `contents: write`, `pull-requests: read`, and `id-token: write` for keyless
+  candidate signing. Permit the Actions bot to push release metadata commits to
+  protected `main` if branch protection is enabled.
 
 Candidate builds fetch the pinned Agent Swarm commit in
 `AGENT_SWARM_MCP_REVISION` and stage only its tracked `mcp-server` package; they

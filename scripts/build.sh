@@ -58,8 +58,10 @@ mkdir -p "${BUILD_CONTEXT_DIR}"
 AGENT_SWARM_SOURCE="${AGENT_SWARM_MCP_SOURCE:-}"
 SOURCE_TMP_DIR=""
 trap '[[ -z "$SOURCE_TMP_DIR" ]] || rm -rf "$SOURCE_TMP_DIR"' EXIT
+if [[ -z "${AGENT_SWARM_MCP_REVISION:-}" ]]; then
+    AGENT_SWARM_MCP_REVISION=$(awk '$1 == "AGENT_SWARM_MCP_REVISION" && $2 == "?=" { print $3; exit }' "${REPO_ROOT}/Makefile")
+fi
 if [[ -z "$AGENT_SWARM_SOURCE" ]]; then
-    AGENT_SWARM_MCP_REVISION="${AGENT_SWARM_MCP_REVISION:-}"
     if [[ ! "$AGENT_SWARM_MCP_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
         echo "Error: AGENT_SWARM_MCP_REVISION must be a full 40-character commit SHA." >&2
         exit 1

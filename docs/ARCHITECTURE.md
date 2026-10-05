@@ -15,6 +15,14 @@
 pull requests. Its local image-build check is restricted to PRs whose head
 branch is in this repository; it never pushes. The image release and both E2E
 gates are confined to `.github/workflows/publish-image.yml` on pushes to `main`.
+`.github/workflows/security.yml` runs CodeQL for Python on PRs and `main`, plus
+GitHub dependency review on PRs. Trusted image builds and release candidates
+run `pip-audit --local` against the installed Python environment.
+
+The release workflow pins the downloaded KinD v0.32.0 linux/amd64 binary to its
+SHA-256 digest recorded by GitHub Releases. It signs each tested candidate
+digest keylessly with cosign through GitHub Actions OIDC; registry signing uses
+the scoped Quay robot credentials, and promotion is skipped if signing fails.
 
 `.github/workflows/publish-image.yml` serializes pushes to `main` and uses the
 tracked `IMAGE_PUBLISH_STATE` SHA as a catch-up cursor. `scripts/image_release.py`
@@ -36,12 +44,15 @@ Every pushed digest passes `scripts/e2e_container.py` (runtime identity and
 permissions, pinned tools/MCP startup, and the OpenCode `/global/health`
 endpoint) and `scripts/e2e_kind_pod.py` (registry pull and workload execution
 under a non-root security context). Only after all candidates pass does the
-promotion stage tag the final candidate as `latest`, compare registry digests,
-and push the prepared version/digest/cursor commits to `main`. The cursor only
-advances in those commits, so failed candidates are eligible for a later
-catch-up run. The workflow requires a Quay push robot secret, read access to
-the public Quay image for E2E, GitHub `contents: write` and
-`pull-requests: read`, and permission for the Actions bot to update `main`.
+promotion stage signs every tested digest with keyless Sigstore/cosign, tags the
+final candidate as `latest`, compares registry digests, and pushes the prepared
+version/digest/cursor commits to `main`. The workflow pins the KinD executable
+digest from GitHub Release asset metadata rather than downloading a checksum
+from the binary origin. The cursor only advances in those commits, so failed
+candidates are eligible for a later catch-up run. The workflow requires a Quay
+push robot secret, read access to the public Quay image for E2E, GitHub
+`contents: write`, `pull-requests: read`, and `id-token: write`, and permission
+for the Actions bot to update `main`.
 
 Release contracts and failure/promotion behavior are covered by
 `tests/test_image_release.py` (`pytest -q tests/test_image_release.py`). The

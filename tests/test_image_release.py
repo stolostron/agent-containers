@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,13 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+
+
+def make_default(name: str) -> str:
+    makefile = (ROOT / "Makefile").read_text()
+    match = re.search(rf"^{re.escape(name)}\s*\?=\s*(\S+)", makefile, re.MULTILINE)
+    assert match, f"{name} is not pinned in the Makefile"
+    return match.group(1)
 
 
 def load_script(name: str):
@@ -95,10 +103,12 @@ def test_make_build_and_push_allow_ci_registry_tag_and_digest_capture():
     assert 'REGISTRY="quay.io/example"' in build
     assert 'IMAGE_TAG="0.5.3"' in build
     assert 'SAVE_DEFAULTS="0"' in build
-    assert "AGENT_SWARM_MCP_REVISION=292c2128164a237aa59e04b11f03630a61113639" in build
+    mcp_revision = make_default("AGENT_SWARM_MCP_REVISION")
+    assert re.fullmatch(r"[0-9a-f]{40}", mcp_revision)
+    assert f"AGENT_SWARM_MCP_REVISION={mcp_revision}" in build
     assert 'PUSH_LATEST="0"' in push
     assert 'PUSH_DIGEST_FILE="IMAGE_DIGEST"' in push
-    assert subprocess.check_output(["make", "-s", "lint-version"], cwd=ROOT, text=True).strip() == "0.15.22"
+    assert subprocess.check_output(["make", "-s", "lint-version"], cwd=ROOT, text=True).strip() == make_default("RUFF_VERSION")
     makefile = (ROOT / "Makefile").read_text()
     assert "commits?path=mcp-server&per_page=1" in makefile
     assert "LATEST_RUFF := $(shell curl -fsSL 'https://pypi.org/pypi/ruff/json'" in makefile
@@ -124,6 +134,7 @@ def test_build_uses_explicit_ci_values_without_writing_local_defaults(tmp_path):
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     shutil.copy(ROOT / "scripts/build.sh", scripts / "build.sh")
+    shutil.copy(ROOT / "Makefile", tmp_path / "Makefile")
     (tmp_path / "containerfiles").mkdir()
     (tmp_path / "containerfiles/Containerfile.agents").write_text("# fixture\n")
     source = tmp_path / "agent-swarm/mcp-server"
@@ -152,13 +163,14 @@ def test_build_uses_explicit_ci_values_without_writing_local_defaults(tmp_path):
             "IMAGE_TAG": "0.5.3",
             "SAVE_DEFAULTS": "0",
             "AGENT_SWARM_MCP_SOURCE": str(source),
-            "AGENT_SWARM_MCP_REVISION": "2" * 40,
         },
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert "quay.io/example/opencode:0.5.3" in calls.read_text()
+    podman_calls = calls.read_text()
+    assert "quay.io/example/opencode:0.5.3" in podman_calls
+    assert f"AGENT_SWARM_MCP_REVISION={make_default('AGENT_SWARM_MCP_REVISION')}" in podman_calls
     assert defaults.read_text() == "REGISTRY=quay.io/local\nIMAGE_TAG=local-tag\n"
     assert (tmp_path / ".build-context/agent-swarm-mcp/pyproject.toml").exists()
 
@@ -327,13 +339,20 @@ def test_both_e2e_helpers_require_digest_refs_and_kind_runs_non_root_security_co
 
 def test_workflow_gates_promotion_on_both_e2e_stages():
     workflow = (ROOT / ".github/workflows/publish-image.yml").read_text()
+    sca = workflow.index("Run SCA audit for every candidate digest")
     standalone = workflow.index("Run standalone container E2E for every candidate")
     kind = workflow.index("Run KinD Pod E2E for every candidate")
+    sign = workflow.index("Sign each tested candidate digest with GitHub OIDC")
     promote = workflow.index("Promote tested candidate and publish release metadata")
-    assert standalone < kind < promote
-    assert workflow.count("steps.publish.outputs.published == 'true'") == 4
+    assert sca < standalone < kind < sign < promote
+    assert workflow.count("steps.publish.outputs.published == 'true'") == 7
     assert "cancel-in-progress: false" in workflow
     assert "pull_request:" not in workflow
+    assert "id-token: write" in workflow
+    assert "50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54" in workflow
+    assert ".sha256sum" not in workflow
+    assert "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6" in workflow
+    assert "pip-audit --local" in workflow
 
 
 def test_pr_workflow_tests_every_pr_but_builds_images_only_for_trusted_prs():
@@ -343,8 +362,15 @@ def test_pr_workflow_tests_every_pr_but_builds_images_only_for_trusted_prs():
     assert "github.event.pull_request.head.repo.full_name == github.repository" in workflow
     assert "make build-opencode REGISTRY=localhost" in workflow
     assert "SAVE_DEFAULTS=0" in workflow
+    assert "Audit built image dependencies" in workflow
     assert "podman push" not in workflow
     lint = (ROOT / ".github/workflows/lint.yml").read_text()
     assert "pull_request:" in lint
     assert "make lint" in lint
     assert "make --no-print-directory -s lint-version" in lint
+
+    security = (ROOT / ".github/workflows/security.yml").read_text()
+    assert "pull_request:" in security and "push:" in security
+    assert "github/codeql-action/init@1190a975f95ce23525efb6a3fc21ea29567c1b52" in security
+    assert "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294" in security
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in security
