@@ -15,9 +15,9 @@
 pull requests. Its local image-build check is restricted to PRs whose head
 branch is in this repository; it never pushes. The image release and both E2E
 gates are confined to `.github/workflows/publish-image.yml` on pushes to `main`.
-`.github/workflows/security.yml` runs CodeQL for Python on PRs and `main`, plus
-GitHub dependency review on PRs. Trusted image builds and release candidates
-run `pip-audit --local` against the installed Python environment.
+`.github/workflows/security.yml` runs Semgrep SAST for Python on PRs and `main`,
+plus GitHub dependency review on PRs. Trusted image builds and release
+candidates run `pip-audit --local` against the installed Python environment.
 
 The release workflow pins the downloaded KinD v0.32.0 linux/amd64 binary to its
 SHA-256 digest recorded by GitHub Releases. It signs each tested candidate

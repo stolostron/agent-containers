@@ -371,6 +371,6 @@ def test_pr_workflow_tests_every_pr_but_builds_images_only_for_trusted_prs():
 
     security = (ROOT / ".github/workflows/security.yml").read_text()
     assert "pull_request:" in security and "push:" in security
-    assert "github/codeql-action/init@1190a975f95ce23525efb6a3fc21ea29567c1b52" in security
+    assert "semgrep==1.179.0" in security
+    assert "semgrep scan --config p/python --error scripts tests" in security
     assert "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294" in security
-    assert "github.event.pull_request.head.repo.full_name == github.repository" in security

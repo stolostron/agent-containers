@@ -227,8 +227,8 @@ Edit or delete to reset defaults.
 Pull requests to `main` run the Python and shell test suites. The image-build
 smoke check runs only for same-repository PR branches (the trusted-PR boundary)
 and builds locally without pushing. Standalone container and KinD E2E remain in
-the release workflow and run only after changes reach `main`. CodeQL Python
-analysis and dependency review run in a separate security workflow; `pip-audit`
+the release workflow and run only after changes reach `main`. Semgrep Python
+SAST and dependency review run in a separate security workflow; `pip-audit`
 checks installed image dependencies on trusted builds and release candidates.
 
 Every push to `main` runs the serialized image release workflow. For each
