@@ -222,19 +222,62 @@ NAMESPACE=agent-coordinator
 
 Edit or delete to reset defaults.
 
-### Release workflow (updating toolchain + publishing the image)
+### Automated image releases
+
+Pull requests to `main` run the Python and shell test suites. The image-build
+smoke check runs only for same-repository PR branches (the trusted-PR boundary)
+and builds locally without pushing. Standalone container and KinD E2E remain in
+the release workflow and run only after changes reach `main`. Semgrep Python
+SAST and dependency review run in a separate security workflow; `pip-audit`
+checks installed image dependencies on trusted builds and release candidates.
+
+Every push to `main` runs the serialized image release workflow. For each
+unprocessed PR squash merge, in first-parent order, it builds a new patch
+SemVer candidate from that merge commit and pushes it to Quay. The workflow
+records the immutable image digest, runs standalone Podman and KinD Pod E2E
+checks and a `pip-audit` SCA scan against that digest, signs each candidate,
+and only then moves `latest` and commits `VERSION`, `IMAGE_DIGEST`, and
+`IMAGE_PUBLISH_STATE` to `main`.
+
+Configure these repository Actions settings:
+
+- Variable `QUAY_REPOSITORY_PATH`: Quay namespace, such as `quay.io/jpacker`
+  (do not include `/opencode` or a tag).
+- Variable `QUAY_ROBOT_USERNAME`: the Quay robot account username.
+- Secret `QUAY_PUSH_TOKEN`: a robot token with push access to the OpenCode
+  image repository. Candidate SemVer tags must be replaceable so failed
+  candidates can be retried from the unchanged release cursor.
+- The Quay repository must allow anonymous pulls so Podman and KinD can test
+  each candidate by digest. The workflow's GitHub token requires
+  `contents: write`, `pull-requests: read`, and `id-token: write` for keyless
+  candidate signing. Permit the Actions bot to push release metadata commits to
+  protected `main` if branch protection is enabled.
+
+Candidate builds fetch the pinned Agent Swarm commit in
+`AGENT_SWARM_MCP_REVISION` and stage only its tracked `mcp-server` package; they
+do not build or run the full `agent-swarm` application. CI registry and tag
+values override local defaults without modifying `.push-defaults`.
+
+If a build or either E2E gate fails, `latest` and committed release metadata
+remain unchanged. The candidate tag is retained for diagnosis. A later push to
+`main` catches up from `IMAGE_PUBLISH_STATE`, so failed and coalesced merges are
+retried in order. Logs include candidate groups, and KinD failures report Pods,
+events, descriptions, and workload logs before cluster cleanup.
+
+Run the helper tests locally with `pytest -q tests/test_image_release.py` and
+lint with `make lint` (Ruff at the pinned `RUFF_VERSION` is required).
+The E2E scripts can be invoked against an already-pushed candidate digest:
 
 ```bash
-# 1. Update all dependency versions in the Makefile (opencode, go, python, etc.)
-make update-deps
+python3 scripts/e2e_container.py --image-ref quay.io/<namespace>/opencode@sha256:<digest>
+python3 scripts/e2e_kind_pod.py --image-ref quay.io/<namespace>/opencode@sha256:<digest>
+```
 
-# 2. Bump the image tag (stored in ../agent-swarm/.push-defaults)
-make set-image-tag IMAGE_TAG=0.x.y
+For local build/push use, explicit values take precedence over saved defaults:
 
-# 3. Build and push the image to the registry
-make publish NOPROMPT=1
-
-# 4. Update AGENT_IMAGE_OPENCODE in ../agent-swarm/.env to match the new tag
+```bash
+make build-opencode REGISTRY=quay.io/<namespace> IMAGE_TAG=0.5.3 NOPROMPT=1
+make push-opencode REGISTRY=quay.io/<namespace> IMAGE_TAG=0.5.3
 ```
 
 ### Provider Config (opencode.json)

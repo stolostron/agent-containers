@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# push.sh — push a previously built image using saved registry/image_tag
+# push.sh — push a previously built image using explicit values or saved defaults
 # Usage: push.sh <image-name>
 set -euo pipefail
 
@@ -13,13 +13,14 @@ else
     DEFAULTS_FILE="${SCRIPT_DIR}/../.push-defaults"
 fi
 
-if [[ ! -f "$DEFAULTS_FILE" ]]; then
-    echo "Error: .push-defaults not found. Run a build target first." >&2
-    exit 1
+SAVED_REGISTRY=""
+SAVED_IMAGE_TAG=""
+if [[ -f "$DEFAULTS_FILE" ]]; then
+    SAVED_REGISTRY=$(grep '^REGISTRY=' "$DEFAULTS_FILE" | cut -d= -f2- || true)
+    SAVED_IMAGE_TAG=$(grep -m1 '^IMAGE_TAG=' "$DEFAULTS_FILE" | cut -d= -f2- || true)
 fi
-
-REGISTRY=$(grep '^REGISTRY=' "$DEFAULTS_FILE" | cut -d= -f2- || true)
-IMAGE_TAG=$(grep -m1 '^IMAGE_TAG=' "$DEFAULTS_FILE" | cut -d= -f2- || true)
+REGISTRY="${REGISTRY:-$SAVED_REGISTRY}"
+IMAGE_TAG="${IMAGE_TAG:-${SAVED_IMAGE_TAG:-latest}}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 
 if [[ -z "$REGISTRY" ]]; then
@@ -32,9 +33,17 @@ FULL_IMAGE="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 echo ""
 echo "=== Push: ${IMAGE_NAME} ==="
 echo "Pushing  ${FULL_IMAGE} ..."
-podman push "${FULL_IMAGE}"
+if [[ -n "${PUSH_DIGEST_FILE:-}" ]]; then
+    DIGEST_TMP=$(mktemp)
+    trap 'rm -f "$DIGEST_TMP"' EXIT
+    podman push --digestfile "${DIGEST_TMP}" "${FULL_IMAGE}"
+    python3 "${SCRIPT_DIR}/image_release.py" record-push \
+        "${PUSH_DIGEST_FILE}" "${DIGEST_TMP}" "${REGISTRY}" "${IMAGE_NAME}"
+else
+    podman push "${FULL_IMAGE}"
+fi
 
-if [[ "$IMAGE_TAG" != "latest" ]]; then
+if [[ "$IMAGE_TAG" != "latest" && "${PUSH_LATEST:-1}" != "0" ]]; then
     LATEST_IMAGE="${REGISTRY}/${IMAGE_NAME}:latest"
     echo "Tagging  ${FULL_IMAGE} -> ${LATEST_IMAGE}"
     podman tag "${FULL_IMAGE}" "${LATEST_IMAGE}"

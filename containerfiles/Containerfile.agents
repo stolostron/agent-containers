@@ -6,7 +6,7 @@ ARG OPENCODE_VERSION=1.17.7
 ARG PYTHON_VERSION=3.14.6
 ARG PYTHON_BUILD=20260610
 ARG JIRA_MCP_VERSION=0.1.0
-ARG AGENT_SWARM_MCP_VERSION=0.1.0
+ARG AGENT_SWARM_MCP_REVISION=292c2128164a237aa59e04b11f03630a61113639
 ARG GOPLS_VERSION=0.22.0
 ARG PYRIGHT_VERSION=1.1.410
 ARG PIP_AUDIT_VERSION=2.10.1
@@ -97,6 +97,7 @@ ENV NPM_CONFIG_CACHE=/home/node/.npm
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
 
 USER node
+ENV HOME=/home/node
 WORKDIR /sandbox
 
 ENV DEVCONTAINER=true
@@ -106,6 +107,7 @@ ENV NODE_OPTIONS=--max-old-space-size=1536
 
 # ---- Stage 2: Runtime languages (Go + Python, shared by all agents) ----
 FROM base-tools AS base-runtimes
+ARG AGENT_SWARM_MCP_REVISION
 ARG GO_VERSION
 ARG PYTHON_VERSION
 ARG PYTHON_BUILD
@@ -140,7 +142,6 @@ RUN set -ex; \
 
 # Install Jira MCP Server from GitHub Releases
 ARG JIRA_MCP_VERSION
-ARG AGENT_SWARM_MCP_VERSION
 COPY .build-context/agent-swarm-mcp /tmp/agent-swarm-mcp
 RUN set -ex; \
     curl -fsSL -o /tmp/jira_mcp_server-${JIRA_MCP_VERSION}-py3-none-any.whl \
@@ -150,16 +151,11 @@ RUN set -ex; \
     && rm -f /tmp/jira_mcp_server-*.whl \
     && jira-mcp-server --help | head -5
 
-# Install the internal Agent Swarm MCP server from its pinned release wheel.
+# Install the source revision staged by build.sh from AGENT_SWARM_MCP_REVISION.
 RUN set -ex; \
-    if [ -f /tmp/agent-swarm-mcp/pyproject.toml ]; then \
-        python3 -m pip install --no-cache-dir /tmp/agent-swarm-mcp; \
-    else \
-        curl -fsSL -o /tmp/agent_swarm_mcp_server-${AGENT_SWARM_MCP_VERSION}-py3-none-any.whl \
-            "https://github.com/stolostron/agent-swarm/releases/download/v${AGENT_SWARM_MCP_VERSION}/agent_swarm_mcp_server-${AGENT_SWARM_MCP_VERSION}-py3-none-any.whl"; \
-        python3 -m pip install --no-cache-dir /tmp/agent_swarm_mcp_server-*.whl; \
-        rm -f /tmp/agent_swarm_mcp_server-*.whl; \
-    fi \
+    test -f /tmp/agent-swarm-mcp/pyproject.toml \
+    && python3 -m pip install --no-cache-dir /tmp/agent-swarm-mcp \
+    && rm -rf /tmp/agent-swarm-mcp \
     && agent-swarm-mcp-server --help >/dev/null
 
 # Install LSP servers (gopls for Go, pyright for Python) — versions pinned via ARGs
@@ -196,6 +192,12 @@ USER node
 # ---- Stage 3: OpenCode agent (last stage — default for OpenShift builds) ----
 FROM base-runtimes AS opencode
 ARG OPENCODE_VERSION
+ARG AGENT_SWARM_MCP_REVISION
+LABEL org.opencontainers.image.agent-swarm-mcp.revision="${AGENT_SWARM_MCP_REVISION}"
+
+USER root
+RUN mkdir -p /home/node/.config /home/node/.local/share \
+    && chown -R node:node /home/node
 
 USER node
 RUN npm install -g opencode-ai@${OPENCODE_VERSION} --ignore-scripts && \

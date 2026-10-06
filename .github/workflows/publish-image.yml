@@ -1,0 +1,153 @@
+name: Publish OpenCode image
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build, verify, and promote OpenCode image
+    runs-on: ubuntu-latest
+    concurrency:
+      group: opencode-image-release-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: read
+      id-token: write
+    steps:
+      - name: Check out main with full history
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Podman
+        run: |
+          if ! command -v podman >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y podman
+          fi
+          podman --version
+
+      - name: Build and push unprocessed squash-merge candidates
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUAY_REPOSITORY_PATH: ${{ vars.QUAY_REPOSITORY_PATH }}
+          QUAY_ROBOT_USERNAME: ${{ vars.QUAY_ROBOT_USERNAME }}
+          QUAY_PUSH_TOKEN: ${{ secrets.QUAY_PUSH_TOKEN }}
+        run: python3 scripts/publish_image.py --stage publish
+
+      - name: Install KinD
+        if: ${{ success() && steps.publish.outputs.published == 'true' }}
+        run: |
+          curl -fsSLo kind-linux-amd64 https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
+          # Expected digest is the GitHub Release API digest for the v0.32.0
+          # linux/amd64 asset, pinned independently of kind.sigs.k8s.io.
+          echo "50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54  kind-linux-amd64" | sha256sum --check -
+          chmod +x kind-linux-amd64
+          sudo mv kind-linux-amd64 /usr/local/bin/kind
+          kind version
+
+      - name: Run SCA audit for every candidate digest
+        if: ${{ success() && steps.publish.outputs.published == 'true' }}
+        env:
+          IMAGE_REFS: ${{ steps.publish.outputs.image_refs }}
+        run: |
+          set -euo pipefail
+          [[ -n "$IMAGE_REFS" ]]
+          candidate=0
+          while IFS= read -r image_ref; do
+            [ -n "$image_ref" ] || continue
+            candidate=$((candidate + 1))
+            echo "::group::SCA audit candidate $candidate — $image_ref"
+            podman run --rm --pull=always --entrypoint /bin/sh "$image_ref" -ec 'pip-audit --local'
+            echo "::endgroup::"
+          done <<< "$IMAGE_REFS"
+
+      - name: Run standalone container E2E for every candidate
+        if: ${{ success() && steps.publish.outputs.published == 'true' }}
+        env:
+          IMAGE_REFS: ${{ steps.publish.outputs.image_refs }}
+        run: |
+          [[ -n "$IMAGE_REFS" ]]
+          candidate=0
+          while IFS= read -r image_ref; do
+            [ -n "$image_ref" ] || continue
+            candidate=$((candidate + 1))
+            echo "::group::Standalone E2E candidate $candidate — $image_ref"
+            if python3 scripts/e2e_container.py --image-ref "$image_ref"; then
+              echo "::endgroup::"
+            else
+              result=$?
+              echo "::endgroup::"
+              exit "$result"
+            fi
+          done <<< "$IMAGE_REFS"
+
+      - name: Run KinD Pod E2E for every candidate
+        if: ${{ success() && steps.publish.outputs.published == 'true' }}
+        env:
+          IMAGE_REFS: ${{ steps.publish.outputs.image_refs }}
+        run: |
+          [[ -n "$IMAGE_REFS" ]]
+          candidate=0
+          while IFS= read -r image_ref; do
+            [ -n "$image_ref" ] || continue
+            candidate=$((candidate + 1))
+            echo "::group::KinD Pod E2E candidate $candidate — $image_ref"
+            if python3 scripts/e2e_kind_pod.py --image-ref "$image_ref" --cluster-name "agent-containers-$candidate"; then
+              echo "::endgroup::"
+            else
+              result=$?
+              echo "::endgroup::"
+              exit "$result"
+            fi
+          done <<< "$IMAGE_REFS"
+
+      - name: Install pinned cosign
+        if: ${{ success() && steps.publish.outputs.published == 'true' }}
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+
+      - name: Sign each tested candidate digest with GitHub OIDC
+        if: ${{ success() && steps.publish.outputs.published == 'true' }}
+        env:
+          IMAGE_REFS: ${{ steps.publish.outputs.image_refs }}
+          QUAY_REPOSITORY_PATH: ${{ vars.QUAY_REPOSITORY_PATH }}
+          QUAY_ROBOT_USERNAME: ${{ vars.QUAY_ROBOT_USERNAME }}
+          QUAY_PUSH_TOKEN: ${{ secrets.QUAY_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          authfile="${RUNNER_TEMP}/cosign-quay-auth.json"
+          docker_config="${RUNNER_TEMP}/cosign-docker-config"
+          mkdir -p "$docker_config"
+          printf '%s' "$QUAY_PUSH_TOKEN" | podman login \
+            --authfile "$authfile" \
+            --username "$QUAY_ROBOT_USERNAME" \
+            --password-stdin quay.io
+          cp "$authfile" "$docker_config/config.json"
+          chmod 600 "$docker_config/config.json"
+          export DOCKER_CONFIG="$docker_config"
+          [[ -n "$IMAGE_REFS" ]]
+          while IFS= read -r image_ref; do
+            [ -n "$image_ref" ] || continue
+            echo "::group::Sign tested candidate — $image_ref"
+            cosign sign --yes "$image_ref"
+            echo "::endgroup::"
+          done <<< "$IMAGE_REFS"
+
+      - name: Promote tested candidate and publish release metadata
+        if: ${{ success() && steps.publish.outputs.published == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUAY_REPOSITORY_PATH: ${{ vars.QUAY_REPOSITORY_PATH }}
+          QUAY_ROBOT_USERNAME: ${{ vars.QUAY_ROBOT_USERNAME }}
+          QUAY_PUSH_TOKEN: ${{ secrets.QUAY_PUSH_TOKEN }}
+        run: python3 scripts/publish_image.py --stage promote-and-push

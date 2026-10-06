@@ -28,17 +28,19 @@ echo ""
 echo "=== Build: ${IMAGE_NAME} ==="
 
 if [[ "${NOPROMPT:-}" == "1" ]]; then
-    REGISTRY="$SAVED_REGISTRY"
-    IMAGE_TAG="$SAVED_IMAGE_TAG"
-else
-    if [[ -n "$SAVED_REGISTRY" ]]; then
-        read -rp "Registry  [${SAVED_REGISTRY}]: " REGISTRY
-    else
-        read -rp "Registry: " REGISTRY
-    fi
     REGISTRY="${REGISTRY:-$SAVED_REGISTRY}"
-    read -rp "IMAGE_TAG [${SAVED_IMAGE_TAG}]: " IMAGE_TAG
     IMAGE_TAG="${IMAGE_TAG:-$SAVED_IMAGE_TAG}"
+else
+    DEFAULT_REGISTRY="${REGISTRY:-$SAVED_REGISTRY}"
+    DEFAULT_IMAGE_TAG="${IMAGE_TAG:-$SAVED_IMAGE_TAG}"
+    if [[ -n "$DEFAULT_REGISTRY" ]]; then
+        read -rp "Registry  [${DEFAULT_REGISTRY}]: " REGISTRY_INPUT
+    else
+        read -rp "Registry: " REGISTRY_INPUT
+    fi
+    REGISTRY="${REGISTRY_INPUT:-$DEFAULT_REGISTRY}"
+    read -rp "IMAGE_TAG [${DEFAULT_IMAGE_TAG}]: " IMAGE_TAG_INPUT
+    IMAGE_TAG="${IMAGE_TAG_INPUT:-$DEFAULT_IMAGE_TAG}"
 fi
 
 if [[ -z "$REGISTRY" ]]; then
@@ -48,32 +50,56 @@ fi
 
 FULL_IMAGE="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
-# Stage the sibling Agent Swarm MCP source when available. This lets local
-# builds use the current checkout before a GitHub release wheel is published.
+# Stage the Agent Swarm MCP source. By default, fetch the exact pinned commit;
+# AGENT_SWARM_MCP_SOURCE is available as an explicit local source override.
 BUILD_CONTEXT_DIR="${REPO_ROOT}/.build-context/agent-swarm-mcp"
 rm -rf "${REPO_ROOT}/.build-context"
 mkdir -p "${BUILD_CONTEXT_DIR}"
-AGENT_SWARM_SOURCE="${REPO_ROOT}/../agent-swarm/mcp-server"
-if [[ -f "${AGENT_SWARM_SOURCE}/pyproject.toml" ]]; then
-    (
-        cd "${AGENT_SWARM_SOURCE}"
-        git ls-files -z -- . |
-            while IFS= read -r -d '' file; do
-                mkdir -p "${BUILD_CONTEXT_DIR}/$(dirname "${file}")"
-                cp -a -- "${file}" "${BUILD_CONTEXT_DIR}/${file}"
-            done
-    )
-else
-    touch "${BUILD_CONTEXT_DIR}/.keep"
+AGENT_SWARM_SOURCE="${AGENT_SWARM_MCP_SOURCE:-}"
+SOURCE_TMP_DIR=""
+trap '[[ -z "$SOURCE_TMP_DIR" ]] || rm -rf "$SOURCE_TMP_DIR"' EXIT
+if [[ -z "${AGENT_SWARM_MCP_REVISION:-}" ]]; then
+    AGENT_SWARM_MCP_REVISION=$(awk '$1 == "AGENT_SWARM_MCP_REVISION" && $2 == "?=" { print $3; exit }' "${REPO_ROOT}/Makefile")
+fi
+if [[ -z "$AGENT_SWARM_SOURCE" ]]; then
+    if [[ ! "$AGENT_SWARM_MCP_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "Error: AGENT_SWARM_MCP_REVISION must be a full 40-character commit SHA." >&2
+        exit 1
+    fi
+    SOURCE_TMP_DIR=$(mktemp -d)
+    git -C "$SOURCE_TMP_DIR" init -q
+    git -C "$SOURCE_TMP_DIR" remote add origin https://github.com/stolostron/agent-swarm.git
+    git -C "$SOURCE_TMP_DIR" fetch -q --depth=1 origin "$AGENT_SWARM_MCP_REVISION"
+    git -C "$SOURCE_TMP_DIR" checkout -q --detach FETCH_HEAD
+    AGENT_SWARM_SOURCE="${SOURCE_TMP_DIR}/mcp-server"
+fi
+if [[ ! -f "${AGENT_SWARM_SOURCE}/pyproject.toml" ]]; then
+    echo "Error: Agent Swarm MCP source not found at ${AGENT_SWARM_SOURCE}." >&2
+    exit 1
+fi
+(
+    cd "${AGENT_SWARM_SOURCE}"
+    git ls-files -z -- . |
+        while IFS= read -r -d '' file; do
+            mkdir -p "${BUILD_CONTEXT_DIR}/$(dirname "${file}")"
+            cp -a -- "${file}" "${BUILD_CONTEXT_DIR}/${file}"
+        done
+)
+if [[ -n "$SOURCE_TMP_DIR" ]]; then
+    rm -rf "$SOURCE_TMP_DIR"
+    SOURCE_TMP_DIR=""
 fi
 
-# Persist REGISTRY + IMAGE_TAG to defaults file
-{
-    grep -v '^REGISTRY=' "$DEFAULTS_FILE" 2>/dev/null \
-        | grep -v '^IMAGE_TAG=' || true
-    echo "REGISTRY=${REGISTRY}"
-    echo "IMAGE_TAG=${IMAGE_TAG}"
-} > "${DEFAULTS_FILE}.tmp" && mv "${DEFAULTS_FILE}.tmp" "$DEFAULTS_FILE"
+# Persist REGISTRY + IMAGE_TAG for interactive/local builds, unless the caller
+# explicitly disables this (as the release workflow does).
+if [[ "${SAVE_DEFAULTS:-1}" != "0" ]]; then
+    {
+        grep -v '^REGISTRY=' "$DEFAULTS_FILE" 2>/dev/null \
+            | grep -v '^IMAGE_TAG=' || true
+        echo "REGISTRY=${REGISTRY}"
+        echo "IMAGE_TAG=${IMAGE_TAG}"
+    } > "${DEFAULTS_FILE}.tmp" && mv "${DEFAULTS_FILE}.tmp" "$DEFAULTS_FILE"
+fi
 
 echo ""
 echo "Building ${FULL_IMAGE} ..."
@@ -88,7 +114,7 @@ podman build \
   --build-arg RG_VERSION="${RG_VERSION:-15.2.0}" \
   --build-arg YQ_VERSION="${YQ_VERSION:-4.53.3}" \
   --build-arg JIRA_MCP_VERSION="${JIRA_MCP_VERSION:-0.2.1}" \
-  --build-arg AGENT_SWARM_MCP_VERSION="${AGENT_SWARM_MCP_VERSION:-0.1.0}" \
+  --build-arg AGENT_SWARM_MCP_REVISION="${AGENT_SWARM_MCP_REVISION:-}" \
   --build-arg GOPLS_VERSION="${GOPLS_VERSION:-0.23.0}" \
   --build-arg PYRIGHT_VERSION="${PYRIGHT_VERSION:-1.1.411}" \
   --build-arg PIP_AUDIT_VERSION="${PIP_AUDIT_VERSION:-2.10.1}" \
@@ -99,4 +125,6 @@ podman build \
 
 echo ""
 echo "Built:   ${FULL_IMAGE}"
-echo "Defaults saved to ${DEFAULTS_FILE}"
+if [[ "${SAVE_DEFAULTS:-1}" != "0" ]]; then
+    echo "Defaults saved to ${DEFAULTS_FILE}"
+fi
