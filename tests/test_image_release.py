@@ -5,11 +5,11 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -74,7 +74,7 @@ def test_pending_merges_uses_pr_association_and_preserves_first_parent_order(mon
 
     def fake_output(command, text, env):
         if command[1] == "rev-list":
-            return "\n".join([SOURCE_1, publisher_commit, SOURCE_2]) + "\n"
+            return f"{SOURCE_1}\n{publisher_commit}\n{SOURCE_2}\n"
         if command[0] == "gh":
             commit = command[2].split("/")[-2]
             if commit == publisher_commit:
@@ -166,6 +166,7 @@ def test_build_uses_explicit_ci_values_without_writing_local_defaults(tmp_path):
         },
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     podman_calls = calls.read_text()
@@ -194,6 +195,7 @@ def test_push_captures_digest_and_does_not_promote_candidate_by_default_when_dis
         env={**env, "REGISTRY": "quay.io/example", "IMAGE_TAG": "0.5.3", "PUSH_LATEST": "0", "PUSH_DIGEST_FILE": "IMAGE_DIGEST"},
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     assert release.read_digest(tmp_path / "IMAGE_DIGEST") == "quay.io/example/opencode@sha256:" + "0" * 64
@@ -208,6 +210,7 @@ def test_push_captures_digest_and_does_not_promote_candidate_by_default_when_dis
         env={**env, "REGISTRY": "quay.io/example", "IMAGE_TAG": "0.5.4", "PUSH_LATEST": "0", "PUSH_DIGEST_FILE": "IMAGE_DIGEST", "FAIL_PUSH": "1"},
         capture_output=True,
         text=True,
+        check=False,
     )
     assert failed.returncode != 0
     assert release.read_digest(tmp_path / "IMAGE_DIGEST") == previous_digest

@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import re
 import subprocess
 import tempfile
+from pathlib import Path
 
-from image_release import atomic_write, next_version, pending_sources, read_digest, read_semver
+from image_release import (
+    atomic_write,
+    next_version,
+    pending_sources,
+    read_digest,
+    read_semver,
+)
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 REGISTRY = re.compile(r"quay\.io/[a-z0-9]+(?:[._-][a-z0-9]+)*\Z")
