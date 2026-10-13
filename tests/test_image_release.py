@@ -368,6 +368,24 @@ def test_e2e_command_logging_redacts_password_assignments_and_failure_output(mon
     assert "diagnostic" not in output
 
 
+@pytest.mark.parametrize(
+    "assignment",
+    [
+        "OPENCODE_PASSWORD=[REDACTED] beta",
+        "OPENCODE_PASSWORD=secret value with spaces",
+        "OPENCODE_PASSWORD=secret \\\nbeta",
+    ],
+)
+def test_e2e_command_logging_redacts_complete_assignment_value(assignment):
+    output = container_e2e.redact_command(["podman", "run", "-e", assignment])
+
+    assert "OPENCODE_PASSWORD=<redacted>" in output
+    assert "[REDACTED]" not in output
+    assert "secret" not in output
+    assert "beta" not in output
+    assert "value with spaces" not in output
+
+
 def test_workflow_gates_promotion_on_both_e2e_stages():
     workflow = (ROOT / ".github/workflows/publish-image.yml").read_text()
     sca = workflow.index("Run SCA audit for every candidate digest")

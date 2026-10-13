@@ -19,11 +19,14 @@ from urllib.request import Request, urlopen
 from image_release import DIGEST, REPOSITORY
 
 _SECRET_NAME = re.compile(r"(?i)(?:PASSWORD|PASSWD|TOKEN|SECRET|CREDENTIAL|API[-_]?KEY|AUTH)")
-_SECRET_ASSIGNMENT = re.compile(r"(?i)([A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|SECRET|CREDENTIAL|API[-_]?KEY|AUTH)[A-Z0-9_]*=)[^\s]+")
+_SECRET_ASSIGNMENT = re.compile(
+    r"(?i)([A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|SECRET|CREDENTIAL|API[-_]?KEY|AUTH)[A-Z0-9_]*=).*",
+    re.DOTALL,
+)
 
 
 def redact_text(text: str, sensitive_values: tuple[str, ...] = ()) -> str:
-    """Remove known secret values and secret environment assignments."""
+    """Remove known secrets and all text following a secret assignment."""
     for secret in sensitive_values:
         if secret:
             text = text.replace(secret, "<redacted>")
