@@ -340,6 +340,34 @@ def test_both_e2e_helpers_require_digest_refs_and_kind_runs_non_root_security_co
     assert container["image"] == IMAGE_REF
 
 
+def test_opencode_cli_package_matches_supported_container_architectures():
+    containerfile = (ROOT / "containerfiles/Containerfile.agents").read_text()
+    assert "x86_64)  OPENCODE_ARCH=x64 ;;" in containerfile
+    assert "aarch64) OPENCODE_ARCH=arm64 ;;" in containerfile
+    assert '"@opencode/cli-linux-${OPENCODE_ARCH}@${OPENCODE_VERSION}"' in containerfile
+    assert 'node_modules/@opencode/cli-linux-${OPENCODE_ARCH}/bin/opencode' in containerfile
+
+
+def test_e2e_command_logging_redacts_password_assignments_and_failure_output(monkeypatch, capsys):
+    password = "per-run-password-value"
+
+    def fail(*_args, **_kwargs):
+        return subprocess.CompletedProcess([], 1, stdout=f"diagnostic {password}", stderr="failure")
+
+    monkeypatch.setattr(container_e2e.subprocess, "run", fail)
+    with pytest.raises(RuntimeError) as exc_info:
+        container_e2e.run(
+            ["podman", "run", "-e", f"OPENCODE_PASSWORD={password}"],
+            capture=True,
+            sensitive_values=(password,),
+        )
+
+    output = capsys.readouterr().out + str(exc_info.value)
+    assert password not in output
+    assert "<redacted>" in output
+    assert "diagnostic" not in output
+
+
 def test_workflow_gates_promotion_on_both_e2e_stages():
     workflow = (ROOT / ".github/workflows/publish-image.yml").read_text()
     sca = workflow.index("Run SCA audit for every candidate digest")

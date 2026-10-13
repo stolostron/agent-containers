@@ -5,6 +5,9 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import re
+import secrets
+import shlex
 import shutil
 import socket
 import subprocess
@@ -14,6 +17,40 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from image_release import DIGEST, REPOSITORY
+
+_SECRET_NAME = re.compile(r"(?i)(?:PASSWORD|PASSWD|TOKEN|SECRET|CREDENTIAL|API[-_]?KEY|AUTH)")
+_SECRET_ASSIGNMENT = re.compile(r"(?i)([A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|SECRET|CREDENTIAL|API[-_]?KEY|AUTH)[A-Z0-9_]*=)[^\s]+")
+
+
+def redact_text(text: str, sensitive_values: tuple[str, ...] = ()) -> str:
+    """Remove known secret values and secret environment assignments."""
+    for secret in sensitive_values:
+        if secret:
+            text = text.replace(secret, "<redacted>")
+    return _SECRET_ASSIGNMENT.sub(r"\1<redacted>", text)
+
+
+def redact_command(command: list[str], sensitive_values: tuple[str, ...] = ()) -> str:
+    """Render a command with secret-valued options and assignments hidden."""
+    redacted: list[str] = []
+    redact_next = False
+    for argument in command:
+        if redact_next:
+            redacted.append("<redacted>")
+            redact_next = False
+            continue
+        argument = redact_text(argument, sensitive_values)
+        if argument.startswith("-") and _SECRET_NAME.search(argument) and "=" not in argument:
+            redacted.append(argument)
+            redact_next = True
+        else:
+            redacted.append(argument)
+    return shlex.join(redacted)
+
+
+def generate_server_password() -> str:
+    """Generate an unpredictable password for this one E2E container run."""
+    return secrets.token_urlsafe(32)
 
 
 def validate_image_ref(reference: str) -> str:
@@ -28,12 +65,20 @@ def validate_image_ref(reference: str) -> str:
     return reference
 
 
-def run(command: list[str], *, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess[str]:
-    print("$ " + " ".join(command))
+def run(
+    command: list[str],
+    *,
+    check: bool = True,
+    capture: bool = False,
+    sensitive_values: tuple[str, ...] = (),
+) -> subprocess.CompletedProcess[str]:
+    safe_command = redact_command(command, sensitive_values)
+    print("$ " + safe_command)
     result = subprocess.run(command, text=True, capture_output=capture, check=False)
     if check and result.returncode:
-        details = (result.stdout or "") + (result.stderr or "")
-        raise RuntimeError(f"command failed ({result.returncode}): {' '.join(command)}\n{details}")
+        # Command output can include container diagnostics or credentials; keep
+        # it out of normal E2E failure output rather than forwarding raw logs.
+        raise RuntimeError(f"command failed ({result.returncode}): {safe_command}")
     return result
 
 
@@ -80,7 +125,7 @@ def wait_for_health(url: str, timeout: int, password: str) -> None:
                     if payload.get("version"):
                         print(f"[PASS] OpenCode V2 API info endpoint: {url} (version {payload['version']})")
                         return
-                    last_error = f"unexpected health response: {payload!r}"
+                    last_error = "unexpected response from OpenCode V2 API info endpoint"
         except (OSError, URLError, json.JSONDecodeError) as exc:
             last_error = str(exc)
         time.sleep(2)
@@ -94,6 +139,7 @@ def main() -> int:
     parser.add_argument("--container-command", default="podman")
     args = parser.parse_args()
     container_name = f"opencode-release-e2e-{int(time.time())}"
+    server_password = ""
     try:
         image_ref = validate_image_ref(args.image_ref)
         if shutil.which(args.container_command) is None:
@@ -102,26 +148,23 @@ def main() -> int:
         print("[PASS] non-root user, permissions, pinned tools, and MCP startup")
 
         port = unused_port()
-        # OpenCode V2 requires server auth: OPENCODE_PASSWORD pins a known
-        # password for the default (non-service) serve mode, which the health
-        # check then uses as Basic auth against /api/info.
-        server_password = "opencode-e2e-health"
+        # OpenCode V2 requires server auth; use a unique secret for this run.
+        server_password = generate_server_password()
         run([
             args.container_command, "run", "--detach", "--pull=always", "--name", container_name,
             "-p", f"127.0.0.1:{port}:4096",
             "-e", f"OPENCODE_PASSWORD={server_password}",
             image_ref,
             "opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096",
-        ])
+        ], sensitive_values=(server_password,))
         wait_for_health(f"http://127.0.0.1:{port}/api/info", args.timeout, server_password)
     except (ValueError, RuntimeError, subprocess.SubprocessError, OSError) as exc:
-        print(f"[FAIL] standalone image E2E: {exc}", file=sys.stderr)
+        sensitive_values = (server_password,)
+        if server_password:
+            sensitive_values += (base64.b64encode(f"opencode:{server_password}".encode()).decode(),)
+        print(f"[FAIL] standalone image E2E: {redact_text(str(exc), sensitive_values)}", file=sys.stderr)
         if shutil.which(args.container_command) and container_name:
-            logs = run([args.container_command, "logs", container_name], check=False, capture=True)
-            if logs.stdout:
-                print(logs.stdout, file=sys.stderr)
-            if logs.stderr:
-                print(logs.stderr, file=sys.stderr)
+            print("[INFO] container logs suppressed to prevent credential disclosure", file=sys.stderr)
         return 1
     finally:
         if shutil.which(args.container_command):

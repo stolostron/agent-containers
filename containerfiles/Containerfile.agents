@@ -202,12 +202,19 @@ RUN mkdir -p /home/node/.config /home/node/.local/share \
 USER node
 # OpenCode V2 ships as @opencode/cli with platform-specific native binaries.
 # --ignore-scripts skips the postinstall downloader; we install the pinned
-# linux-x64 platform package explicitly and copy its native binary to the
-# global bin directory (mirrors the official curl installer layout).
-RUN npm install -g @opencode/cli@${OPENCODE_VERSION} --ignore-scripts && \
+# platform package matching the target architecture and copy its native binary
+# to the global bin directory (mirrors the official curl installer layout).
+RUN set -ex; \
+    ARCH_RAW=$(uname -m); \
+    case "$ARCH_RAW" in \
+      x86_64)  OPENCODE_ARCH=x64 ;; \
+      aarch64) OPENCODE_ARCH=arm64 ;; \
+      *) echo "Unsupported arch: $ARCH_RAW" >&2 && exit 1 ;; \
+    esac; \
+    npm install -g @opencode/cli@${OPENCODE_VERSION} --ignore-scripts && \
     OC_DIR=/usr/local/share/npm-global/lib/node_modules/@opencode/cli && \
-    cd "$OC_DIR" && npm install --ignore-scripts @opencode/cli-linux-x64@${OPENCODE_VERSION} && \
-    cp "$OC_DIR/node_modules/@opencode/cli-linux-x64/bin/opencode" /usr/local/share/npm-global/bin/opencode && \
+    cd "$OC_DIR" && npm install --ignore-scripts "@opencode/cli-linux-${OPENCODE_ARCH}@${OPENCODE_VERSION}" && \
+    cp "$OC_DIR/node_modules/@opencode/cli-linux-${OPENCODE_ARCH}/bin/opencode" /usr/local/share/npm-global/bin/opencode && \
     chmod 755 /usr/local/share/npm-global/bin/opencode && \
     npm cache clean --force
 
