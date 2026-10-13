@@ -11,7 +11,7 @@ This repository builds a container image for **OpenCode** — an AI coding agent
 Each image includes:
 - Git and essential development tools
 - Node.js 24 (Red Hat UBI10 base)
-- OpenCode CLI pre-installed (`opencode-ai`)
+- OpenCode V2 CLI pre-installed (`@opencode/cli`)
 - Provider config for Claude, Gemini, and OpenAI
 - Go and Python 3 runtimes
 - Development utilities (fzf, ripgrep, jq, vim, nano, zsh, less)
@@ -161,7 +161,7 @@ OpenCode is configured to show Claude, Gemini, and OpenAI models. Select a provi
 opencode
 
 # Non-interactive with a specific model
-opencode run --model google-vertex-anthropic/claude-sonnet-4-20250514 "explain this code"
+opencode run --model google-vertex/claude-sonnet-5@default "explain this code"
 opencode run --model google/gemini-2.5-pro "refactor this function"
 opencode run --model openai/gpt-4o "write tests for this function"
 
@@ -286,11 +286,11 @@ Baked into the image at `/sandbox/opencode.json`. Restricts available providers 
 
 ```json
 {
-  "enabled_providers": ["google-vertex-anthropic", "google", "openai"]
+  "enabled_providers": ["google-vertex", "google", "openai"]
 }
 ```
 
-- `google-vertex-anthropic` — Claude via Google Vertex AI (GCP credentials)
+- `google-vertex` — Claude and Gemini via Google Vertex AI (GCP credentials; V2 canonical ID, replaces V1 `google-vertex-anthropic`)
 - `google` — Gemini via Google API key
 - `openai` — OpenAI via `OPENAI_API_KEY`
 

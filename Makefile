@@ -19,7 +19,7 @@ PUSH_DIGEST_FILE ?=
 GO_VERSION       ?= 1.27.2
 PYTHON_VERSION   ?= 3.14.8
 PYTHON_BUILD     ?= 20261003
-OPENCODE_VERSION ?= 1.18.35
+OPENCODE_VERSION ?= 2.0.28
 GH_VERSION       ?= 2.102.0
 FZF_VERSION      ?= 0.74.4
 RG_VERSION       ?= 15.2.0
@@ -96,7 +96,7 @@ resume-podman-$(1):
 serve-podman-$(1):
 	@bash scripts/podman-run.sh $(1) serve
 attach-podman-$(1):
-	$(1) attach http://localhost:4096
+	$(1) --server http://localhost:4096
 
 endef
 
@@ -138,7 +138,7 @@ update-deps:  ## Fetch latest versions of all dependencies and update Makefile
 	$(eval LATEST_GO := $(shell curl -fsSL 'https://go.dev/dl/?mode=json' | jq -r '.[0].version // empty' | sed 's/go//'))
 	$(eval LATEST_BUILD := $(shell curl -fsSL 'https://api.github.com/repos/indygreg/python-build-standalone/releases?per_page=5' | jq -r '[.[] | select(.prerelease == false and .draft == false)][0].tag_name // empty'))
 	$(eval LATEST_PY := $(shell curl -fsSL 'https://api.github.com/repos/indygreg/python-build-standalone/releases/tags/$(LATEST_BUILD)' | jq -r '.assets[].name' | grep -oP 'cpython-\K[0-9]+\.[0-9]+\.[0-9]+(?=\+.*x86_64-unknown-linux-gnu-install_only\.tar\.gz)' | sort -V | tail -1))
-	$(eval LATEST_OC := $(shell curl -fsSL 'https://registry.npmjs.org/opencode-ai/latest' | jq -r '.version // empty'))
+	$(eval LATEST_OC := $(shell curl -fsSL 'https://registry.npmjs.org/@opencode/cli/latest' | jq -r '.version // empty'))
 	$(eval LATEST_GH := $(shell curl -fsSL 'https://api.github.com/repos/cli/cli/releases?per_page=5' | jq -r '[.[] | select(.prerelease == false and .draft == false)][0].tag_name // empty | ltrimstr("v")'))
 	$(eval LATEST_FZF := $(shell curl -fsSL 'https://api.github.com/repos/junegunn/fzf/releases?per_page=5' | jq -r '[.[] | select(.prerelease == false and .draft == false)][0].tag_name // empty | ltrimstr("v")'))
 	$(eval LATEST_RG := $(shell curl -fsSL 'https://api.github.com/repos/BurntSushi/ripgrep/releases?per_page=5' | jq -r '[.[] | select(.prerelease == false and .draft == false)][0].tag_name // empty'))
@@ -153,7 +153,7 @@ update-deps:  ## Fetch latest versions of all dependencies and update Makefile
 	$(if $(strip $(LATEST_GO)),,$(error Failed to fetch latest Go version - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_BUILD)),,$(error Failed to fetch latest Python build tag - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_PY)),,$(error Failed to fetch latest Python version - aborting without modifying Makefile))
-	$(if $(strip $(LATEST_OC)),,$(error Failed to fetch latest opencode-ai version - aborting without modifying Makefile))
+	$(if $(strip $(LATEST_OC)),,$(error Failed to fetch latest @opencode/cli version - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_GH)),,$(error Failed to fetch latest gh version - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_FZF)),,$(error Failed to fetch latest fzf version - aborting without modifying Makefile))
 	$(if $(strip $(LATEST_RG)),,$(error Failed to fetch latest ripgrep version - aborting without modifying Makefile))

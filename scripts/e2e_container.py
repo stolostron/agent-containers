@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import shutil
 import socket
@@ -10,7 +11,7 @@ import subprocess
 import sys
 import time
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from image_release import DIGEST, REPOSITORY
 
@@ -63,18 +64,21 @@ def unused_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def wait_for_health(url: str, timeout: int) -> None:
+def wait_for_health(url: str, timeout: int, password: str) -> None:
+    """Poll the OpenCode V2 /api/info endpoint with Basic auth until healthy."""
+    auth = base64.b64encode(f"opencode:{password}".encode()).decode()
     deadline = time.monotonic() + timeout
     last_error = "OpenCode health endpoint did not respond"
     while time.monotonic() < deadline:
         try:
-            with urlopen(url, timeout=3) as response:
+            request = Request(url, headers={"Authorization": f"Basic {auth}"})
+            with urlopen(request, timeout=3) as response:
                 if response.status != 200:
                     last_error = f"health endpoint returned HTTP {response.status}"
                 else:
                     payload = json.loads(response.read())
-                    if payload.get("healthy") is True:
-                        print(f"[PASS] OpenCode health endpoint: {url}")
+                    if payload.get("version"):
+                        print(f"[PASS] OpenCode V2 API info endpoint: {url} (version {payload['version']})")
                         return
                     last_error = f"unexpected health response: {payload!r}"
         except (OSError, URLError, json.JSONDecodeError) as exc:
@@ -98,12 +102,18 @@ def main() -> int:
         print("[PASS] non-root user, permissions, pinned tools, and MCP startup")
 
         port = unused_port()
+        # OpenCode V2 requires server auth: OPENCODE_PASSWORD pins a known
+        # password for the default (non-service) serve mode, which the health
+        # check then uses as Basic auth against /api/info.
+        server_password = "opencode-e2e-health"
         run([
             args.container_command, "run", "--detach", "--pull=always", "--name", container_name,
-            "-p", f"127.0.0.1:{port}:4096", image_ref,
+            "-p", f"127.0.0.1:{port}:4096",
+            "-e", f"OPENCODE_PASSWORD={server_password}",
+            image_ref,
             "opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096",
         ])
-        wait_for_health(f"http://127.0.0.1:{port}/global/health", args.timeout)
+        wait_for_health(f"http://127.0.0.1:{port}/api/info", args.timeout, server_password)
     except (ValueError, RuntimeError, subprocess.SubprocessError, OSError) as exc:
         print(f"[FAIL] standalone image E2E: {exc}", file=sys.stderr)
         if shutil.which(args.container_command) and container_name:

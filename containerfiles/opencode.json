@@ -1,11 +1,4 @@
 {
-  "enabled_providers": ["google-vertex-anthropic", "google", "openai"],
-  "lsp": {
-    "go": {
-      "command": ["gopls"]
-    },
-    "python": {
-      "command": ["pyright-langserver", "--stdio"]
-    }
-  }
+  "$schema": "https://opencode.ai/config.json",
+  "enabled_providers": ["google-vertex", "google", "openai"]
 }

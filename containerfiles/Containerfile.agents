@@ -2,7 +2,7 @@ ARG FZF_VERSION=0.73.1
 ARG RG_VERSION=15.1.0
 ARG GH_VERSION=2.94.0
 ARG GO_VERSION=1.26.4
-ARG OPENCODE_VERSION=1.17.7
+ARG OPENCODE_VERSION=2.0.28
 ARG PYTHON_VERSION=3.14.6
 ARG PYTHON_BUILD=20260610
 ARG JIRA_MCP_VERSION=0.1.0
@@ -200,10 +200,14 @@ RUN mkdir -p /home/node/.config /home/node/.local/share \
     && chown -R node:node /home/node
 
 USER node
-RUN npm install -g opencode-ai@${OPENCODE_VERSION} --ignore-scripts && \
-    OC_DIR=/usr/local/share/npm-global/lib/node_modules/opencode-ai && \
-    cd "$OC_DIR" && npm install --ignore-scripts opencode-linux-x64@${OPENCODE_VERSION} && \
-    cp "$OC_DIR/node_modules/opencode-linux-x64/bin/opencode" /usr/local/share/npm-global/bin/opencode && \
+# OpenCode V2 ships as @opencode/cli with platform-specific native binaries.
+# --ignore-scripts skips the postinstall downloader; we install the pinned
+# linux-x64 platform package explicitly and copy its native binary to the
+# global bin directory (mirrors the official curl installer layout).
+RUN npm install -g @opencode/cli@${OPENCODE_VERSION} --ignore-scripts && \
+    OC_DIR=/usr/local/share/npm-global/lib/node_modules/@opencode/cli && \
+    cd "$OC_DIR" && npm install --ignore-scripts @opencode/cli-linux-x64@${OPENCODE_VERSION} && \
+    cp "$OC_DIR/node_modules/@opencode/cli-linux-x64/bin/opencode" /usr/local/share/npm-global/bin/opencode && \
     chmod 755 /usr/local/share/npm-global/bin/opencode && \
     npm cache clean --force
 

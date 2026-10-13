@@ -107,7 +107,7 @@ podman build \
   -f "${REPO_ROOT}/${CONTAINERFILE}" \
   --build-arg GH_VERSION="${GH_VERSION:-2.96.0}" \
   --build-arg GO_VERSION="${GO_VERSION:-1.26.5}" \
-  --build-arg OPENCODE_VERSION="${OPENCODE_VERSION:-1.18.9}" \
+  --build-arg OPENCODE_VERSION="${OPENCODE_VERSION:-2.0.28}" \
   --build-arg PYTHON_VERSION="${PYTHON_VERSION:-3.14.6}" \
   --build-arg PYTHON_BUILD="${PYTHON_BUILD:-20260728}" \
   --build-arg FZF_VERSION="${FZF_VERSION:-0.74.1}" \
