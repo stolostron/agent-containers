@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 import re
 import secrets
 import shlex
@@ -74,10 +75,11 @@ def run(
     check: bool = True,
     capture: bool = False,
     sensitive_values: tuple[str, ...] = (),
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     safe_command = redact_command(command, sensitive_values)
     print("$ " + safe_command)
-    result = subprocess.run(command, text=True, capture_output=capture, check=False)
+    result = subprocess.run(command, text=True, capture_output=capture, check=False, env=env)
     if check and result.returncode:
         # Command output can include container diagnostics or credentials; keep
         # it out of normal E2E failure output rather than forwarding raw logs.
@@ -156,10 +158,10 @@ def main() -> int:
         run([
             args.container_command, "run", "--detach", "--pull=always", "--name", container_name,
             "-p", f"127.0.0.1:{port}:4096",
-            "-e", f"OPENCODE_PASSWORD={server_password}",
+            "-e", "OPENCODE_PASSWORD",
             image_ref,
             "opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096",
-        ], sensitive_values=(server_password,))
+        ], sensitive_values=(server_password,), env={**os.environ, "OPENCODE_PASSWORD": server_password})
         wait_for_health(f"http://127.0.0.1:{port}/api/info", args.timeout, server_password)
     except (ValueError, RuntimeError, subprocess.SubprocessError, OSError) as exc:
         sensitive_values = (server_password,)

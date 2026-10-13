@@ -368,6 +368,33 @@ def test_e2e_command_logging_redacts_password_assignments_and_failure_output(mon
     assert "diagnostic" not in output
 
 
+def test_e2e_passes_password_via_environment_without_exposing_it_in_argv(monkeypatch):
+    password = "per-run-password-value"
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(container_e2e, "validate_image_ref", lambda reference: reference)
+    monkeypatch.setattr(container_e2e, "verify_runtime", lambda *_args: None)
+    monkeypatch.setattr(container_e2e, "unused_port", lambda: 4097)
+    monkeypatch.setattr(container_e2e, "generate_server_password", lambda: password)
+    monkeypatch.setattr(container_e2e, "wait_for_health", lambda *_args: None)
+    monkeypatch.setattr(container_e2e.shutil, "which", lambda _command: "/usr/bin/podman")
+    monkeypatch.setattr(container_e2e.subprocess, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["e2e_container.py", "--image-ref", IMAGE_REF])
+
+    assert container_e2e.main() == 0
+
+    launch_argv, launch_kwargs = next(
+        (command, kwargs) for command, kwargs in calls if len(command) > 1 and command[1] == "run"
+    )
+    assert launch_argv[launch_argv.index("-e") + 1] == "OPENCODE_PASSWORD"
+    assert password not in launch_argv
+    assert launch_kwargs["env"]["OPENCODE_PASSWORD"] == password
+
+
 @pytest.mark.parametrize(
     "assignment",
     [
