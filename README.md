@@ -85,17 +85,23 @@ make deploy-podman-opencode
 
 ### Podman — Server Mode
 
-Starts OpenCode as a background server on `localhost:4096`:
+Starts OpenCode as a background server on `localhost:4096`. Server mode
+requires a password: set `OPENCODE_PASSWORD` first — the helper passes it to
+the container through the environment without printing it.
 
 ```bash
+read -rsp "Choose an OpenCode server password: " OPENCODE_PASSWORD
+echo
+export OPENCODE_PASSWORD
 make serve-podman-opencode
+unset OPENCODE_PASSWORD
 ```
 
 Then connect from your local machine:
 
 ```bash
-opencode          # TUI connected to the server
-# or open http://localhost:4096 in a browser
+make attach-podman-opencode   # TUI attached to the server
+# or open http://localhost:4096 in a browser (password required)
 ```
 
 Stop the server with:
