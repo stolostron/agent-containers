@@ -349,7 +349,7 @@ def test_opencode_cli_package_matches_supported_container_architectures():
 
 
 def test_e2e_command_logging_redacts_password_assignments_and_failure_output(monkeypatch, capsys):
-    password = "per-run-password-value"
+    password = container_e2e.generate_server_password()
 
     def fail(*_args, **_kwargs):
         return subprocess.CompletedProcess([], 1, stdout=f"diagnostic {password}", stderr="failure")
@@ -369,7 +369,7 @@ def test_e2e_command_logging_redacts_password_assignments_and_failure_output(mon
 
 
 def test_e2e_passes_password_via_environment_without_exposing_it_in_argv(monkeypatch):
-    password = "per-run-password-value"
+    password = container_e2e.generate_server_password()
     calls = []
 
     def fake_run(command, **kwargs):
@@ -391,7 +391,7 @@ def test_e2e_passes_password_via_environment_without_exposing_it_in_argv(monkeyp
         (command, kwargs) for command, kwargs in calls if len(command) > 1 and command[1] == "run"
     )
     assert launch_argv[launch_argv.index("-e") + 1] == "OPENCODE_PASSWORD"
-    assert password not in launch_argv
+    assert all(password not in argument for argument in launch_argv)
     assert launch_kwargs["env"]["OPENCODE_PASSWORD"] == password
 
 

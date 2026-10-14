@@ -339,6 +339,19 @@ make build-opencode
 make deploy-podman-opencode
 ```
 
+### Running the Server Locally
+
+Set a server password interactively so it is not echoed, then start serve mode. The helper supplies the password through the environment without printing it.
+
+```bash
+read -rsp "Choose an OpenCode server password: " OPENCODE_PASSWORD
+echo
+export OPENCODE_PASSWORD
+scripts/podman-run.sh opencode serve
+opencode --server http://localhost:4096
+unset OPENCODE_PASSWORD
+```
+
 ## Security Notes
 
 - **Secrets are gitignored**: Never commit `k8s/secrets/*.yaml` (non-template files)
