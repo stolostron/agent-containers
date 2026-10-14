@@ -36,5 +36,5 @@ Always run `bash tests/test_lsp_version_pinning.sh` after modifying any version 
 - **Secrets**: Running `make create-opencode-secret` generates gitignored `.yaml` files from templates in `k8s/secrets/`. Do not commit generated secrets.
 - **User Permissions in Containerfile**: The container base uses a non-root `node` user. When installing system packages, explicitly switch to `USER root`, install, and then switch back to `USER node`.
 - **Markdown Plans**: When editing files in `plans/` (like `INDEX.md`), use `---` for separators. Do not use `# ──` heading separators.
-- **Opencode Configuration**: Models are restricted to Claude and Gemini via `containerfiles/opencode.json`.
+- **Opencode Configuration**: Models are restricted to Claude, Gemini, and OpenAI via `containerfiles/opencode.json` (OpenCode V2; Vertex models use the `google-vertex` provider ID).
 - **Runtime cache paths**: Do not move agent-required Go tools or caches to `/tmp`. OpenCode treats `/tmp` as an external directory and automated sessions may reject access. Use persistent user-home paths for runtime state; build-only `/tmp` directories are acceptable only when removed in the same image layer.

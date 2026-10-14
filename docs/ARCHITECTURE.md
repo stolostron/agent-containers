@@ -41,8 +41,8 @@ the Agent Swarm application. `AGENT_SWARM_MCP_SOURCE` is an explicit local
 source override.
 
 Every pushed digest passes `scripts/e2e_container.py` (runtime identity and
-permissions, pinned tools/MCP startup, and the OpenCode `/global/health`
-endpoint) and `scripts/e2e_kind_pod.py` (registry pull and workload execution
+permissions, pinned tools/MCP startup, and the authenticated OpenCode V2
+`/api/info` endpoint) and `scripts/e2e_kind_pod.py` (registry pull and workload execution
 under a non-root security context). Only after all candidates pass does the
 promotion stage signs every tested digest with keyless Sigstore/cosign, tags the
 final candidate as `latest`, compares registry digests, and pushes the prepared

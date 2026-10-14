@@ -115,11 +115,17 @@ opencode)
             "$IMAGE" opencode "${EXTRA_ARGS[@]}"
         ;;
     serve)
+        if [[ -z "${OPENCODE_PASSWORD:-}" ]]; then
+            echo "Error: set OPENCODE_PASSWORD before starting server mode." >&2
+            exit 1
+        fi
         podman run --rm -d \
             "${COMMON_ARGS[@]}" \
+            -e OPENCODE_PASSWORD \
             -p 4096:4096 \
-            "$IMAGE" opencode serve --hostname 0.0.0.0
-        echo "OpenCode server started — connect at http://localhost:4096"
+            "$IMAGE" opencode serve --hostname 0.0.0.0 --port 4096
+        echo "OpenCode V2 server started — connect at http://localhost:4096"
+        echo "Connect with: opencode --server http://localhost:4096 (enter the configured password when prompted)"
         echo "Stop with: podman stop ${TYPE}"
         ;;
     *)

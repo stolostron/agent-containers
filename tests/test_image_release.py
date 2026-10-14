@@ -340,6 +340,113 @@ def test_both_e2e_helpers_require_digest_refs_and_kind_runs_non_root_security_co
     assert container["image"] == IMAGE_REF
 
 
+def test_opencode_cli_package_matches_supported_container_architectures():
+    containerfile = (ROOT / "containerfiles/Containerfile.agents").read_text()
+    assert "x86_64)  OPENCODE_ARCH=x64 ;;" in containerfile
+    assert "aarch64) OPENCODE_ARCH=arm64 ;;" in containerfile
+    assert '"@opencode/cli-linux-${OPENCODE_ARCH}@${OPENCODE_VERSION}"' in containerfile
+    assert 'node_modules/@opencode/cli-linux-${OPENCODE_ARCH}/bin/opencode' in containerfile
+
+
+def test_e2e_command_logging_redacts_password_assignments_and_failure_output(monkeypatch, capsys):
+    password = container_e2e.generate_server_password()
+
+    def fail(*_args, **_kwargs):
+        return subprocess.CompletedProcess([], 1, stdout=f"diagnostic {password}", stderr="failure")
+
+    monkeypatch.setattr(container_e2e.subprocess, "run", fail)
+    with pytest.raises(RuntimeError) as exc_info:
+        container_e2e.run(
+            ["podman", "run", "-e", f"OPENCODE_PASSWORD={password}"],
+            capture=True,
+            sensitive_values=(password,),
+        )
+
+    output = capsys.readouterr().out + str(exc_info.value)
+    assert password not in output
+    assert "<redacted>" in output
+    assert "diagnostic" not in output
+
+
+def test_e2e_passes_password_via_environment_without_exposing_it_in_argv(monkeypatch):
+    password = container_e2e.generate_server_password()
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(container_e2e, "validate_image_ref", lambda reference: reference)
+    monkeypatch.setattr(container_e2e, "verify_runtime", lambda *_args: None)
+    monkeypatch.setattr(container_e2e, "unused_port", lambda: 4097)
+    monkeypatch.setattr(container_e2e, "generate_server_password", lambda: password)
+    monkeypatch.setattr(container_e2e, "wait_for_health", lambda *_args: None)
+    unauthenticated_requests = []
+
+    def fake_urlopen(request, timeout=3):
+        unauthenticated_requests.append(request)
+        raise container_e2e.HTTPError(request.full_url, 401, "Unauthorized", None, None)
+
+    monkeypatch.setattr(container_e2e, "urlopen", fake_urlopen)
+    monkeypatch.setattr(container_e2e.shutil, "which", lambda _command: "/usr/bin/podman")
+    monkeypatch.setattr(container_e2e.subprocess, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["e2e_container.py", "--image-ref", IMAGE_REF])
+
+    assert container_e2e.main() == 0
+
+    assert [request.full_url for request in unauthenticated_requests] == ["http://127.0.0.1:4097/api/info"]
+    assert all(request.get_header("Authorization") is None for request in unauthenticated_requests)
+
+    launch_argv, launch_kwargs = next(
+        (command, kwargs) for command, kwargs in calls if len(command) > 1 and command[1] == "run"
+    )
+    assert launch_argv[launch_argv.index("-e") + 1] == "OPENCODE_PASSWORD"
+    assert all(password not in argument for argument in launch_argv)
+    assert launch_kwargs["env"]["OPENCODE_PASSWORD"] == password
+
+
+def test_e2e_verifies_unauthenticated_api_info_requests_are_rejected(monkeypatch):
+    def rejected(_request, timeout=3):
+        raise container_e2e.HTTPError("http://127.0.0.1:4096/api/info", 401, "Unauthorized", None, None)
+
+    monkeypatch.setattr(container_e2e, "urlopen", rejected)
+    container_e2e.verify_unauthenticated_rejected("http://127.0.0.1:4096/api/info")
+
+    class OpenEndpoint:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def allow(_request, timeout=3):
+        return OpenEndpoint()
+
+    monkeypatch.setattr(container_e2e, "urlopen", allow)
+    with pytest.raises(RuntimeError, match="not rejected"):
+        container_e2e.verify_unauthenticated_rejected("http://127.0.0.1:4096/api/info")
+
+
+@pytest.mark.parametrize(
+    "assignment",
+    [
+        "OPENCODE_PASSWORD=[REDACTED] beta",
+        "OPENCODE_PASSWORD=secret value with spaces",
+        "OPENCODE_PASSWORD=secret \\\nbeta",
+    ],
+)
+def test_e2e_command_logging_redacts_complete_assignment_value(assignment):
+    output = container_e2e.redact_command(["podman", "run", "-e", assignment])
+
+    assert "OPENCODE_PASSWORD=<redacted>" in output
+    assert "[REDACTED]" not in output
+    assert "secret" not in output
+    assert "beta" not in output
+    assert "value with spaces" not in output
+
+
 def test_workflow_gates_promotion_on_both_e2e_stages():
     workflow = (ROOT / ".github/workflows/publish-image.yml").read_text()
     sca = workflow.index("Run SCA audit for every candidate digest")
