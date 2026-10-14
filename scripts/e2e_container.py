@@ -14,7 +14,7 @@ import socket
 import subprocess
 import sys
 import time
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from image_release import DIGEST, REPOSITORY
@@ -137,6 +137,19 @@ def wait_for_health(url: str, timeout: int, password: str) -> None:
     raise RuntimeError(last_error)
 
 
+def verify_unauthenticated_rejected(url: str) -> None:
+    """Assert /api/info rejects requests without credentials (HTTP 401)."""
+    request = Request(url)
+    try:
+        with urlopen(request, timeout=3) as response:
+            status = response.status
+    except HTTPError as error:
+        status = error.code
+    if status != 401:
+        raise RuntimeError(f"unauthenticated /api/info request was not rejected (HTTP {status})")
+    print(f"[PASS] OpenCode V2 API info endpoint rejects unauthenticated requests: {url}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image-ref", required=True)
@@ -162,7 +175,9 @@ def main() -> int:
             image_ref,
             "opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096",
         ], sensitive_values=(server_password,), env={**os.environ, "OPENCODE_PASSWORD": server_password})
-        wait_for_health(f"http://127.0.0.1:{port}/api/info", args.timeout, server_password)
+        info_url = f"http://127.0.0.1:{port}/api/info"
+        wait_for_health(info_url, args.timeout, server_password)
+        verify_unauthenticated_rejected(info_url)
     except (ValueError, RuntimeError, subprocess.SubprocessError, OSError) as exc:
         sensitive_values = (server_password,)
         if server_password:

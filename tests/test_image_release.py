@@ -381,11 +381,21 @@ def test_e2e_passes_password_via_environment_without_exposing_it_in_argv(monkeyp
     monkeypatch.setattr(container_e2e, "unused_port", lambda: 4097)
     monkeypatch.setattr(container_e2e, "generate_server_password", lambda: password)
     monkeypatch.setattr(container_e2e, "wait_for_health", lambda *_args: None)
+    unauthenticated_requests = []
+
+    def fake_urlopen(request, timeout=3):
+        unauthenticated_requests.append(request)
+        raise container_e2e.HTTPError(request.full_url, 401, "Unauthorized", None, None)
+
+    monkeypatch.setattr(container_e2e, "urlopen", fake_urlopen)
     monkeypatch.setattr(container_e2e.shutil, "which", lambda _command: "/usr/bin/podman")
     monkeypatch.setattr(container_e2e.subprocess, "run", fake_run)
     monkeypatch.setattr(sys, "argv", ["e2e_container.py", "--image-ref", IMAGE_REF])
 
     assert container_e2e.main() == 0
+
+    assert [request.full_url for request in unauthenticated_requests] == ["http://127.0.0.1:4097/api/info"]
+    assert all(request.get_header("Authorization") is None for request in unauthenticated_requests)
 
     launch_argv, launch_kwargs = next(
         (command, kwargs) for command, kwargs in calls if len(command) > 1 and command[1] == "run"
@@ -393,6 +403,30 @@ def test_e2e_passes_password_via_environment_without_exposing_it_in_argv(monkeyp
     assert launch_argv[launch_argv.index("-e") + 1] == "OPENCODE_PASSWORD"
     assert all(password not in argument for argument in launch_argv)
     assert launch_kwargs["env"]["OPENCODE_PASSWORD"] == password
+
+
+def test_e2e_verifies_unauthenticated_api_info_requests_are_rejected(monkeypatch):
+    def rejected(_request, timeout=3):
+        raise container_e2e.HTTPError("http://127.0.0.1:4096/api/info", 401, "Unauthorized", None, None)
+
+    monkeypatch.setattr(container_e2e, "urlopen", rejected)
+    container_e2e.verify_unauthenticated_rejected("http://127.0.0.1:4096/api/info")
+
+    class OpenEndpoint:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def allow(_request, timeout=3):
+        return OpenEndpoint()
+
+    monkeypatch.setattr(container_e2e, "urlopen", allow)
+    with pytest.raises(RuntimeError, match="not rejected"):
+        container_e2e.verify_unauthenticated_rejected("http://127.0.0.1:4096/api/info")
 
 
 @pytest.mark.parametrize(
