@@ -18,9 +18,9 @@ PUSH_DIGEST_FILE ?=
 # Toolchain versions — update all with: make update-deps
 GO_VERSION       ?= 1.27.4
 PYTHON_VERSION   ?= 3.15.2
-PYTHON_BUILD     ?= 20261110
-OPENCODE_VERSION ?= 2.4.1
-GH_VERSION       ?= 2.105.0
+PYTHON_BUILD     ?= 20261124
+OPENCODE_VERSION ?= 2.4.2
+GH_VERSION       ?= 2.106.0
 FZF_VERSION      ?= 0.75.0
 RG_VERSION       ?= 16.0.0
 YQ_VERSION       ?= 4.54.3
